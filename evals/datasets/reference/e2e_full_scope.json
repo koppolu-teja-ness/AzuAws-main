@@ -1,0 +1,325 @@
+{
+  "name": "e2e_full_scope",
+  "example_key": "e2e_full_scope-v1",
+  "kind": "seed",
+  "inputs": {
+    "all_resource_types": [
+      "Microsoft.KeyVault/vaults",
+      "Microsoft.Network/expressRouteCircuits",
+      "Microsoft.Network/virtualNetworks",
+      "Microsoft.Network/virtualNetworks/subnets",
+      "Microsoft.Storage/storageAccounts",
+      "Microsoft.Web/sites"
+    ],
+    "resource_types": [
+      "Microsoft.KeyVault/vaults",
+      "Microsoft.Network/expressRouteCircuits",
+      "Microsoft.Network/virtualNetworks",
+      "Microsoft.Network/virtualNetworks/subnets",
+      "Microsoft.Storage/storageAccounts",
+      "Microsoft.Web/sites"
+    ],
+    "unsupported_types": [
+      "Microsoft.Network/expressRouteCircuits"
+    ],
+    "noop_types": [],
+    "foldable_types": [],
+    "source": "resources/e2e_full_scope/main.bicep",
+    "arm_template": {
+      "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+      "contentVersion": "1.0.0.0",
+      "metadata": {
+        "_generator": {
+          "name": "bicep",
+          "version": "0.47.16.16243",
+          "templateHash": "8373593721230670570"
+        }
+      },
+      "parameters": {
+        "location": {
+          "type": "string",
+          "defaultValue": "[resourceGroup().location]"
+        },
+        "vaultName": {
+          "type": "string",
+          "defaultValue": "kv-e2e-demo"
+        },
+        "vnetName": {
+          "type": "string",
+          "defaultValue": "vnet-e2e-demo"
+        },
+        "subnetName": {
+          "type": "string",
+          "defaultValue": "subnet-e2e-app"
+        },
+        "functionAppName": {
+          "type": "string",
+          "defaultValue": "func-e2e-demo"
+        },
+        "storageAccountName": {
+          "type": "string",
+          "defaultValue": "ste2edemo"
+        },
+        "expressRouteCircuitName": {
+          "type": "string",
+          "defaultValue": "er-e2e-demo"
+        }
+      },
+      "variables": {
+        "appInsightsName": "[format('{0}-appi', parameters('functionAppName'))]"
+      },
+      "resources": [
+        {
+          "type": "Microsoft.KeyVault/vaults",
+          "apiVersion": "2023-07-01",
+          "name": "[parameters('vaultName')]",
+          "location": "[parameters('location')]",
+          "properties": {
+            "tenantId": "[subscription().tenantId]",
+            "sku": {
+              "family": "A",
+              "name": "standard"
+            },
+            "accessPolicies": [],
+            "enableRbacAuthorization": true
+          }
+        },
+        {
+          "type": "Microsoft.Network/virtualNetworks",
+          "apiVersion": "2023-11-01",
+          "name": "[parameters('vnetName')]",
+          "location": "[parameters('location')]",
+          "properties": {
+            "addressSpace": {
+              "addressPrefixes": [
+                "10.20.0.0/16"
+              ]
+            }
+          }
+        },
+        {
+          "type": "Microsoft.Network/virtualNetworks/subnets",
+          "apiVersion": "2023-11-01",
+          "name": "[format('{0}/{1}', parameters('vnetName'), parameters('subnetName'))]",
+          "properties": {
+            "addressPrefix": "10.20.1.0/24",
+            "serviceEndpoints": [
+              {
+                "service": "Microsoft.Storage"
+              }
+            ]
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+          ]
+        },
+        {
+          "type": "Microsoft.Storage/storageAccounts",
+          "apiVersion": "2023-05-01",
+          "name": "[parameters('storageAccountName')]",
+          "location": "[parameters('location')]",
+          "sku": {
+            "name": "Standard_LRS"
+          },
+          "kind": "StorageV2",
+          "properties": {}
+        },
+        {
+          "type": "Microsoft.Web/sites",
+          "apiVersion": "2022-09-01",
+          "name": "[parameters('functionAppName')]",
+          "location": "[parameters('location')]",
+          "kind": "functionapp",
+          "properties": {
+            "serverFarmId": "/subscriptions/**MASKED-ID**/resourceGroups/rg/providers/Microsoft.Web/serverfarms/plan",
+            "siteConfig": {
+              "appSettings": [
+                {
+                  "name": "APPINSIGHTS_NAME",
+                  "value": "[variables('appInsightsName')]"
+                }
+              ]
+            }
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+          ]
+        },
+        {
+          "type": "Microsoft.Network/expressRouteCircuits",
+          "apiVersion": "2023-11-01",
+          "name": "[parameters('expressRouteCircuitName')]",
+          "location": "[parameters('location')]",
+          "properties": {
+            "serviceProviderProperties": {
+              "serviceProviderName": "Contoso-ExpressRoute",
+              "peeringLocation": "Silicon Valley",
+              "bandwidthInMbps": 200
+            }
+          }
+        }
+      ]
+    },
+    "cnr": {
+      "parameters": [
+        {
+          "name": "location",
+          "type": "string",
+          "default": "[resourceGroup().location]",
+          "secure": false
+        },
+        {
+          "name": "vaultName",
+          "type": "string",
+          "default": "kv-e2e-demo",
+          "secure": false
+        },
+        {
+          "name": "vnetName",
+          "type": "string",
+          "default": "vnet-e2e-demo",
+          "secure": false
+        },
+        {
+          "name": "subnetName",
+          "type": "string",
+          "default": "subnet-e2e-app",
+          "secure": false
+        },
+        {
+          "name": "functionAppName",
+          "type": "string",
+          "default": "func-e2e-demo",
+          "secure": false
+        },
+        {
+          "name": "storageAccountName",
+          "type": "string",
+          "default": "ste2edemo",
+          "secure": false
+        },
+        {
+          "name": "expressRouteCircuitName",
+          "type": "string",
+          "default": "er-e2e-demo",
+          "secure": false
+        }
+      ],
+      "resources": [
+        {
+          "logical_id": "ParametersvaultName",
+          "azure_type": "Microsoft.KeyVault/vaults",
+          "api_version": "2023-07-01",
+          "name_expression": "[parameters('vaultName')]",
+          "properties": {
+            "tenantId": "[subscription().tenantId]",
+            "sku": {
+              "family": "A",
+              "name": "standard"
+            },
+            "accessPolicies": [],
+            "enableRbacAuthorization": true
+          },
+          "depends_on": [],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "ParametersvnetName",
+          "azure_type": "Microsoft.Network/virtualNetworks",
+          "api_version": "2023-11-01",
+          "name_expression": "[parameters('vnetName')]",
+          "properties": {
+            "addressSpace": {
+              "addressPrefixes": [
+                "10.20.0.0/16"
+              ]
+            }
+          },
+          "depends_on": [],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "Format01parametersvnetNameparameterssubnetName",
+          "azure_type": "Microsoft.Network/virtualNetworks/subnets",
+          "api_version": "2023-11-01",
+          "name_expression": "[format('{0}/{1}', parameters('vnetName'), parameters('subnetName'))]",
+          "properties": {
+            "addressPrefix": "10.20.1.0/24",
+            "serviceEndpoints": [
+              {
+                "service": "Microsoft.Storage"
+              }
+            ]
+          },
+          "depends_on": [
+            "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+          ],
+          "parent_logical_id": "ParametersvnetName"
+        },
+        {
+          "logical_id": "ParametersstorageAccountName",
+          "azure_type": "Microsoft.Storage/storageAccounts",
+          "api_version": "2023-05-01",
+          "name_expression": "[parameters('storageAccountName')]",
+          "properties": {},
+          "depends_on": [],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "ParametersfunctionAppName",
+          "azure_type": "Microsoft.Web/sites",
+          "api_version": "2022-09-01",
+          "name_expression": "[parameters('functionAppName')]",
+          "properties": {
+            "serverFarmId": "/subscriptions/**MASKED-ID**/resourceGroups/rg/providers/Microsoft.Web/serverfarms/plan",
+            "siteConfig": {
+              "appSettings": [
+                {
+                  "name": "APPINSIGHTS_NAME",
+                  "value": "[variables('appInsightsName')]"
+                }
+              ]
+            }
+          },
+          "depends_on": [
+            "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+          ],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "ParametersexpressRouteCircuitName",
+          "azure_type": "Microsoft.Network/expressRouteCircuits",
+          "api_version": "2023-11-01",
+          "name_expression": "[parameters('expressRouteCircuitName')]",
+          "properties": {
+            "serviceProviderProperties": {
+              "serviceProviderName": "Contoso-ExpressRoute",
+              "peeringLocation": "Silicon Valley",
+              "bandwidthInMbps": 200
+            }
+          },
+          "depends_on": [],
+          "parent_logical_id": null
+        }
+      ],
+      "outputs": {}
+    }
+  },
+  "expected": {
+    "expected_aws_resource_types": [
+      "AWS::EC2::VPC",
+      "AWS::EC2::Subnet",
+      "AWS::Lambda::Function",
+      "AWS::IAM::Role"
+    ],
+    "expected_parameter_names": [],
+    "must_be_noecho": [],
+    "forbidden_patterns": [
+      "Microsoft.Network/expressRouteCircuits",
+      "AWS::DirectConnect",
+      "ExpressRoute"
+    ],
+    "expected_min_resource_count": 4,
+    "notes": "Adversarial (unsupported type): the vault here has no secrets child, so per bicep-to-cloudformation.md it contributes ZERO AWS resources (no bare-vault equivalent). ExpressRoute has no knowledge_base doc and MUST be excluded/flagged, never mapped. expected_parameter_names deliberately left empty -- the source hardcodes CIDRs/settings instead of parameterizing them, so exact CFN parameter names here are LLM-dependent; a Phase 3 evaluator should check resource types and the forbidden_patterns, not exact parameter names, for this example. TODO: human review once Phase 3 evaluators exist."
+  }
+}

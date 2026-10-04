@@ -1,0 +1,46 @@
+# Core dependencies for the Azure Bicep -> AWS CloudFormation migration pipeline
+
+# Required: Static validation (cfn-lint)
+cfn-lint>=1.57.0
+
+# Required: guardrail security scanning of the rendered template (orchestrator/guardrails.py)
+# before deployment. Invoked via `python -m checkov.main` (its Windows console-script wrapper
+# is broken: ModuleNotFoundError on this platform). Pulls in many transitive deps and may
+# downgrade boto3/packaging slightly -- verified compatible with the rest of this project
+# (`pip check` only flags an unrelated chromadb dev-dependency, `pytest` still green).
+checkov>=3.2.0
+
+# Required: renders the migration plan into CloudFormation YAML
+pyyaml>=6.0
+
+# Required: AWS Bedrock LLM calls (only needed for full run, not --dry-run)
+boto3>=1.28.0
+
+# Required: persistent vector store for RAG retrieval over knowledge_base docs
+chromadb>=0.4.22
+
+# Required: BM25 keyword scoring for hybrid RAG search (orchestrator/rag.py), fused with
+# Chroma's vector search via Reciprocal Rank Fusion. Pure Python, no extra system deps.
+# Set RAG_HYBRID_SEARCH=false to disable (falls back to vector-only automatically anyway
+# if this package is missing).
+rank_bm25>=0.2.2
+
+# Required: 7-agent LangGraph orchestration (migrate_agents.py)
+langgraph>=0.2.0
+
+# Required: loads AZURE_RESOURCE_GROUP/AZURE_SUBSCRIPTION_ID/etc. from a local .env file
+python-dotenv>=1.0.0
+
+# Required: LangSmith tracing + evaluation (orchestrator/observability.py). Opt-in at
+# runtime via LANGSMITH_TRACING -- importable/installed unconditionally so tracing can
+# be turned on without a fresh install. Needs Python 3.10+ (see README Prerequisites).
+langsmith>=0.14.0
+
+# Required: colored/tabular CLI output (orchestrator/cli_ui.py, used by migrate.py,
+# migrate_agents.py, evals/run_eval.py). Already a transitive dep of chromadb, listed
+# explicitly since we import it directly.
+rich>=13.0.0
+
+# Optional: Useful for local development
+# pip-tools>=7.0.0   # for requirements.in pinning
+pytest>=8.0.0        # for tests/

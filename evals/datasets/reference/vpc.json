@@ -1,0 +1,206 @@
+{
+  "name": "vpc",
+  "example_key": "vpc-v1",
+  "kind": "seed",
+  "inputs": {
+    "all_resource_types": [
+      "Microsoft.Network/virtualNetworks",
+      "Microsoft.Network/virtualNetworks/subnets"
+    ],
+    "resource_types": [
+      "Microsoft.Network/virtualNetworks",
+      "Microsoft.Network/virtualNetworks/subnets"
+    ],
+    "unsupported_types": [],
+    "noop_types": [],
+    "foldable_types": [],
+    "source": "resources/vpc/main.bicep",
+    "arm_template": {
+      "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+      "contentVersion": "1.0.0.0",
+      "metadata": {
+        "_generator": {
+          "name": "bicep",
+          "version": "0.47.16.16243",
+          "templateHash": "2017527676956525762"
+        }
+      },
+      "parameters": {
+        "location": {
+          "type": "string",
+          "defaultValue": "[resourceGroup().location]"
+        },
+        "vnetName": {
+          "type": "string",
+          "defaultValue": "vnet-migration-demo"
+        },
+        "subnetName": {
+          "type": "string",
+          "defaultValue": "subnet-app"
+        },
+        "vnetAddressPrefix": {
+          "type": "string",
+          "defaultValue": "10.30.0.0/16"
+        },
+        "subnetAddressPrefix": {
+          "type": "string",
+          "defaultValue": "10.30.1.0/24"
+        }
+      },
+      "resources": [
+        {
+          "type": "Microsoft.Network/virtualNetworks",
+          "apiVersion": "2023-11-01",
+          "name": "[parameters('vnetName')]",
+          "location": "[parameters('location')]",
+          "properties": {
+            "addressSpace": {
+              "addressPrefixes": [
+                "[parameters('vnetAddressPrefix')]"
+              ]
+            }
+          }
+        },
+        {
+          "type": "Microsoft.Network/virtualNetworks/subnets",
+          "apiVersion": "2023-11-01",
+          "name": "[format('{0}/{1}', parameters('vnetName'), parameters('subnetName'))]",
+          "properties": {
+            "addressPrefix": "[parameters('subnetAddressPrefix')]",
+            "serviceEndpoints": [
+              {
+                "service": "Microsoft.Storage"
+              }
+            ]
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+          ]
+        }
+      ],
+      "outputs": {
+        "vnetName": {
+          "type": "string",
+          "value": "[parameters('vnetName')]"
+        },
+        "subnetName": {
+          "type": "string",
+          "value": "[parameters('subnetName')]"
+        },
+        "vnetAddressPrefix": {
+          "type": "string",
+          "value": "[parameters('vnetAddressPrefix')]"
+        },
+        "subnetAddressPrefix": {
+          "type": "string",
+          "value": "[parameters('subnetAddressPrefix')]"
+        }
+      }
+    },
+    "cnr": {
+      "parameters": [
+        {
+          "name": "location",
+          "type": "string",
+          "default": "[resourceGroup().location]",
+          "secure": false
+        },
+        {
+          "name": "vnetName",
+          "type": "string",
+          "default": "vnet-migration-demo",
+          "secure": false
+        },
+        {
+          "name": "subnetName",
+          "type": "string",
+          "default": "subnet-app",
+          "secure": false
+        },
+        {
+          "name": "vnetAddressPrefix",
+          "type": "string",
+          "default": "10.30.0.0/16",
+          "secure": false
+        },
+        {
+          "name": "subnetAddressPrefix",
+          "type": "string",
+          "default": "10.30.1.0/24",
+          "secure": false
+        }
+      ],
+      "resources": [
+        {
+          "logical_id": "ParametersvnetName",
+          "azure_type": "Microsoft.Network/virtualNetworks",
+          "api_version": "2023-11-01",
+          "name_expression": "[parameters('vnetName')]",
+          "properties": {
+            "addressSpace": {
+              "addressPrefixes": [
+                "[parameters('vnetAddressPrefix')]"
+              ]
+            }
+          },
+          "depends_on": [],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "Format01parametersvnetNameparameterssubnetName",
+          "azure_type": "Microsoft.Network/virtualNetworks/subnets",
+          "api_version": "2023-11-01",
+          "name_expression": "[format('{0}/{1}', parameters('vnetName'), parameters('subnetName'))]",
+          "properties": {
+            "addressPrefix": "[parameters('subnetAddressPrefix')]",
+            "serviceEndpoints": [
+              {
+                "service": "Microsoft.Storage"
+              }
+            ]
+          },
+          "depends_on": [
+            "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]"
+          ],
+          "parent_logical_id": "ParametersvnetName"
+        }
+      ],
+      "outputs": {
+        "vnetName": {
+          "type": "string",
+          "value": "[parameters('vnetName')]"
+        },
+        "subnetName": {
+          "type": "string",
+          "value": "[parameters('subnetName')]"
+        },
+        "vnetAddressPrefix": {
+          "type": "string",
+          "value": "[parameters('vnetAddressPrefix')]"
+        },
+        "subnetAddressPrefix": {
+          "type": "string",
+          "value": "[parameters('subnetAddressPrefix')]"
+        }
+      }
+    }
+  },
+  "expected": {
+    "expected_aws_resource_types": [
+      "AWS::EC2::VPC",
+      "AWS::EC2::Subnet"
+    ],
+    "expected_parameter_names": [
+      "VpcCidrBlock",
+      "SubnetCidrBlock",
+      "AvailabilityZone"
+    ],
+    "must_be_noecho": [],
+    "forbidden_patterns": [
+      "Microsoft.Network",
+      "serviceEndpoints"
+    ],
+    "expected_min_resource_count": 2,
+    "notes": "Per knowledge_base/vpc-to-cloudformation.md: serviceEndpoints has no 1:1 CFN resource (dropped, not fabricated); AvailabilityZone is a new required parameter with no Azure source."
+  }
+}

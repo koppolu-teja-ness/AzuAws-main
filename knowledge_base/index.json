@@ -1,0 +1,21 @@
+{
+  "Microsoft.KeyVault/vaults": "bicep-to-cloudformation.md",
+  "Microsoft.KeyVault/vaults/secrets": "bicep-to-cloudformation.md",
+  "Microsoft.Network/virtualNetworks": "vpc-to-cloudformation.md",
+  "Microsoft.Network/virtualNetworks/subnets": "vpc-to-cloudformation.md",
+  "Microsoft.Network/networkSecurityGroups": "vpc-to-cloudformation.md",
+  "Microsoft.Network/networkSecurityGroups/securityRules": "vpc-to-cloudformation.md",
+  "Microsoft.Network/routeTables": "vpc-to-cloudformation.md",
+  "Microsoft.Network/routeTables/routes": "vpc-to-cloudformation.md",
+  "Microsoft.Network/natGateways": "vpc-to-cloudformation.md",
+  "Microsoft.Network/publicIPAddresses": "vpc-to-cloudformation.md",
+  "Microsoft.Web/serverfarms": "functions-to-cloudformation.md",
+  "Microsoft.Web/sites": "functions-to-cloudformation.md",
+  "Microsoft.Storage/storageAccounts": "functions-to-cloudformation.md",
+  "Microsoft.Storage/storageAccounts/blobServices/containers": "storage-to-cloudformation.md",
+  "Microsoft.Storage/storageAccounts/queueServices/queues": "messaging-to-cloudformation.md",
+  "Microsoft.ServiceBus/namespaces": "messaging-to-cloudformation.md",
+  "Microsoft.ServiceBus/namespaces/queues": "messaging-to-cloudformation.md",
+  "Microsoft.ServiceBus/namespaces/topics": "messaging-to-cloudformation.md",
+  "Microsoft.ServiceBus/namespaces/topics/subscriptions": "messaging-to-cloudformation.md"
+}

@@ -1,0 +1,111 @@
+{
+  "name": "adversarial_missing_property",
+  "example_key": "adversarial_missing_property-v1",
+  "kind": "adversarial",
+  "inputs": {
+    "all_resource_types": [
+      "Microsoft.KeyVault/vaults",
+      "Microsoft.KeyVault/vaults/secrets"
+    ],
+    "resource_types": [
+      "Microsoft.KeyVault/vaults",
+      "Microsoft.KeyVault/vaults/secrets"
+    ],
+    "unsupported_types": [],
+    "noop_types": [],
+    "foldable_types": [],
+    "source": "evals/fixtures/adversarial/missing_property.json",
+    "arm_template": {
+      "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+      "contentVersion": "1.0.0.0",
+      "parameters": {
+        "vaultName": {
+          "type": "string",
+          "defaultValue": "kv-adversarial-missingprop"
+        }
+      },
+      "resources": [
+        {
+          "type": "Microsoft.KeyVault/vaults",
+          "apiVersion": "2023-07-01",
+          "name": "[parameters('vaultName')]",
+          "location": "eastus",
+          "properties": {
+            "tenantId": "**MASKED-ID**",
+            "sku": {
+              "family": "A",
+              "name": "standard"
+            },
+            "enableRbacAuthorization": true
+          }
+        },
+        {
+          "type": "Microsoft.KeyVault/vaults/secrets",
+          "apiVersion": "2023-07-01",
+          "name": "[format('{0}/{1}', parameters('vaultName'), 'incomplete-secret')]",
+          "properties": {
+            "contentType": "text/plain"
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]"
+          ]
+        }
+      ]
+    },
+    "cnr": {
+      "parameters": [
+        {
+          "name": "vaultName",
+          "type": "string",
+          "default": "kv-adversarial-missingprop",
+          "secure": false
+        }
+      ],
+      "resources": [
+        {
+          "logical_id": "ParametersvaultName",
+          "azure_type": "Microsoft.KeyVault/vaults",
+          "api_version": "2023-07-01",
+          "name_expression": "[parameters('vaultName')]",
+          "properties": {
+            "tenantId": "**MASKED-ID**",
+            "sku": {
+              "family": "A",
+              "name": "standard"
+            },
+            "enableRbacAuthorization": true
+          },
+          "depends_on": [],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "Format01parametersvaultNameincompletesecret",
+          "azure_type": "Microsoft.KeyVault/vaults/secrets",
+          "api_version": "2023-07-01",
+          "name_expression": "[format('{0}/{1}', parameters('vaultName'), 'incomplete-secret')]",
+          "properties": {
+            "contentType": "text/plain"
+          },
+          "depends_on": [
+            "[resourceId('Microsoft.KeyVault/vaults', parameters('vaultName'))]"
+          ],
+          "parent_logical_id": "ParametersvaultName"
+        }
+      ],
+      "outputs": {}
+    }
+  },
+  "expected": {
+    "expected_aws_resource_types": [],
+    "expected_parameter_names": [],
+    "must_be_noecho": [],
+    "forbidden_patterns": [
+      "SecretString:\\s*['\"]?<",
+      "TODO",
+      "FIXME",
+      "placeholder"
+    ],
+    "expected_min_resource_count": 0,
+    "notes": "Adversarial (missing property): 'incomplete-secret' has no properties.value in the source ARM. Agent 3 must never invent/hallucinate a secret value that was never supplied -- it should either omit the resource, stop, or surface it for human review. TODO: human review once Phase 3 evaluators exist and real model behavior on this input is observed."
+  }
+}

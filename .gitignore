@@ -1,0 +1,37 @@
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
+
+# Python environment and cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Non-interactive CFN parameter values (may contain secrets) -- see --params-file in README
+params.json
+*.params.json
+
+# Generated pipeline artifacts -- regenerated on every run, never source
+output/
+input/
+
+# RAG vector store (knowledge_base/rag.py) -- regenerated from the .md docs
+knowledge_base/.chroma/
+
+# Azure Functions local/runtime artifacts
+local.settings.json
+resources/functions/deployment_package/function/local.settings.json
+resources/functions/deployment_package/function/node_modules/
+resources/functions/deployment_package/*.zip
+
+# Node and miscellaneous local artifacts
+node_modules/
+npm-debug.log*
+*.log
+

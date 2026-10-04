@@ -1,0 +1,237 @@
+{
+  "name": "functions",
+  "example_key": "functions-v1",
+  "kind": "seed",
+  "inputs": {
+    "all_resource_types": [
+      "Microsoft.Storage/storageAccounts",
+      "Microsoft.Web/serverfarms",
+      "Microsoft.Web/sites"
+    ],
+    "resource_types": [
+      "Microsoft.Storage/storageAccounts",
+      "Microsoft.Web/serverfarms",
+      "Microsoft.Web/sites"
+    ],
+    "unsupported_types": [],
+    "noop_types": [],
+    "foldable_types": [],
+    "source": "resources/functions/main.bicep",
+    "arm_template": {
+      "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+      "contentVersion": "1.0.0.0",
+      "metadata": {
+        "_generator": {
+          "name": "bicep",
+          "version": "0.47.16.16243",
+          "templateHash": "15936041166894114561"
+        }
+      },
+      "parameters": {
+        "location": {
+          "type": "string",
+          "defaultValue": "[resourceGroup().location]"
+        },
+        "functionAppName": {
+          "type": "string",
+          "defaultValue": "func-migration-demo"
+        },
+        "storageAccountName": {
+          "type": "string",
+          "defaultValue": "stfuncmigrationdemo"
+        },
+        "servicePlanName": {
+          "type": "string",
+          "defaultValue": "[format('{0}-plan', parameters('functionAppName'))]"
+        }
+      },
+      "resources": [
+        {
+          "type": "Microsoft.Storage/storageAccounts",
+          "apiVersion": "2023-05-01",
+          "name": "[parameters('storageAccountName')]",
+          "location": "[parameters('location')]",
+          "sku": {
+            "name": "Standard_LRS"
+          },
+          "kind": "StorageV2",
+          "properties": {
+            "minimumTlsVersion": "TLS1_2",
+            "supportsHttpsTrafficOnly": true
+          }
+        },
+        {
+          "type": "Microsoft.Web/serverfarms",
+          "apiVersion": "2022-09-01",
+          "name": "[parameters('servicePlanName')]",
+          "location": "[parameters('location')]",
+          "sku": {
+            "name": "Y1",
+            "tier": "Dynamic"
+          },
+          "kind": "functionapp",
+          "properties": {}
+        },
+        {
+          "type": "Microsoft.Web/sites",
+          "apiVersion": "2022-09-01",
+          "name": "[parameters('functionAppName')]",
+          "location": "[parameters('location')]",
+          "kind": "functionapp",
+          "properties": {
+            "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('servicePlanName'))]",
+            "siteConfig": {
+              "appSettings": [
+                {
+                  "name": "AzureWebJobsStorage",
+                  "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', parameters('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').keys[0].value)]"
+                },
+                {
+                  "name": "FUNCTIONS_EXTENSION_VERSION",
+                  "value": "~4"
+                },
+                {
+                  "name": "FUNCTIONS_WORKER_RUNTIME",
+                  "value": "node"
+                }
+              ]
+            }
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.Web/serverfarms', parameters('servicePlanName'))]",
+            "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+          ]
+        }
+      ],
+      "outputs": {
+        "functionAppName": {
+          "type": "string",
+          "value": "[parameters('functionAppName')]"
+        },
+        "storageAccountName": {
+          "type": "string",
+          "value": "[parameters('storageAccountName')]"
+        },
+        "servicePlanName": {
+          "type": "string",
+          "value": "[parameters('servicePlanName')]"
+        }
+      }
+    },
+    "cnr": {
+      "parameters": [
+        {
+          "name": "location",
+          "type": "string",
+          "default": "[resourceGroup().location]",
+          "secure": false
+        },
+        {
+          "name": "functionAppName",
+          "type": "string",
+          "default": "func-migration-demo",
+          "secure": false
+        },
+        {
+          "name": "storageAccountName",
+          "type": "string",
+          "default": "stfuncmigrationdemo",
+          "secure": false
+        },
+        {
+          "name": "servicePlanName",
+          "type": "string",
+          "default": "[format('{0}-plan', parameters('functionAppName'))]",
+          "secure": false
+        }
+      ],
+      "resources": [
+        {
+          "logical_id": "ParametersstorageAccountName",
+          "azure_type": "Microsoft.Storage/storageAccounts",
+          "api_version": "2023-05-01",
+          "name_expression": "[parameters('storageAccountName')]",
+          "properties": {
+            "minimumTlsVersion": "TLS1_2",
+            "supportsHttpsTrafficOnly": true
+          },
+          "depends_on": [],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "ParametersservicePlanName",
+          "azure_type": "Microsoft.Web/serverfarms",
+          "api_version": "2022-09-01",
+          "name_expression": "[parameters('servicePlanName')]",
+          "properties": {},
+          "depends_on": [],
+          "parent_logical_id": null
+        },
+        {
+          "logical_id": "ParametersfunctionAppName",
+          "azure_type": "Microsoft.Web/sites",
+          "api_version": "2022-09-01",
+          "name_expression": "[parameters('functionAppName')]",
+          "properties": {
+            "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('servicePlanName'))]",
+            "siteConfig": {
+              "appSettings": [
+                {
+                  "name": "AzureWebJobsStorage",
+                  "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};EndpointSuffix={1};AccountKey={2}', parameters('storageAccountName'), environment().suffixes.storage, listKeys(resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName')), '2023-05-01').keys[0].value)]"
+                },
+                {
+                  "name": "FUNCTIONS_EXTENSION_VERSION",
+                  "value": "~4"
+                },
+                {
+                  "name": "FUNCTIONS_WORKER_RUNTIME",
+                  "value": "node"
+                }
+              ]
+            }
+          },
+          "depends_on": [
+            "[resourceId('Microsoft.Web/serverfarms', parameters('servicePlanName'))]",
+            "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+          ],
+          "parent_logical_id": null
+        }
+      ],
+      "outputs": {
+        "functionAppName": {
+          "type": "string",
+          "value": "[parameters('functionAppName')]"
+        },
+        "storageAccountName": {
+          "type": "string",
+          "value": "[parameters('storageAccountName')]"
+        },
+        "servicePlanName": {
+          "type": "string",
+          "value": "[parameters('servicePlanName')]"
+        }
+      }
+    }
+  },
+  "expected": {
+    "expected_aws_resource_types": [
+      "AWS::Lambda::Function",
+      "AWS::IAM::Role"
+    ],
+    "expected_parameter_names": [
+      "FunctionName",
+      "DeploymentBucketName",
+      "DeploymentPackageKey",
+      "LambdaRuntime"
+    ],
+    "must_be_noecho": [],
+    "forbidden_patterns": [
+      "Microsoft.Web",
+      "AWS::S3::Bucket",
+      "AWS::ServerFarm"
+    ],
+    "expected_min_resource_count": 2,
+    "notes": "Per knowledge_base/functions-to-cloudformation.md: serverfarms has no AWS equivalent (Lambda has no plan resource); the deployment S3 bucket is referenced by name only and must never be declared as an AWS::S3::Bucket resource in this stack."
+  }
+}

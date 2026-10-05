@@ -37,6 +37,7 @@ confirmation prompt, no interactive parameter entry.
 - [Resource coverage](#resource-coverage)
 - [Knowledge base](#knowledge-base)
 - [Tracing & evaluation (optional)](#tracing--evaluation-optional)
+- [Evaluation components guide](#evaluation-components-guide)
 - [Current progress](#current-progress)
 - [Next steps to reach an end-to-end application](#next-steps-to-reach-an-end-to-end-application)
 - [Troubleshooting](#troubleshooting)
@@ -589,6 +590,12 @@ Two more pieces build on that for offline-friendly prompt/pipeline evaluation:
 
   Both modes write `output/evals/<experiment>/{summary.md,results.jsonl}` (pass rate, mean
   score per evaluator, per-example failures).
+
+## Evaluation components guide
+
+For a clear, component-by-component explanation of the evaluation system
+(targets, datasets, each evaluator metric, scoring behavior, prompt evaluation,
+and run-history calibration), see [EVALUATION_COMPONENTS.md](EVALUATION_COMPONENTS.md).
 
 ## Current progress
 

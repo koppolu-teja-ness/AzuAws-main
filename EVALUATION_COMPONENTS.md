@@ -16,6 +16,31 @@ The implementation lives primarily in:
 - `scripts/create_langsmith_dataset.py`
 
 
+## How to use this guide quickly
+
+Use this fast path depending on your goal.
+
+### A) Prompt tuning (`agent3`)
+
+1. Start with **Section 3.1** (`target_agent3`) to understand what is being scored.
+2. Read **Section 4** with focus on: `plan_schema_valid`, `parameter_hygiene`, `forbidden_patterns_absent`, `resource_type_accuracy`, `retrieval_quality`, `mapping_fidelity`, `latency_ms`.
+3. Use **Section 9** for prompt-version comparison workflow.
+4. Use **Section 10** to prioritize safety/correctness over latency.
+
+### B) Pipeline quality checks (`pipeline`)
+
+1. Start with **Section 3.2** (`target_pipeline`) for the eval-only graph scope.
+2. Read **Section 4** with focus on: `cfn_lint_clean`, `lint_attempts`, `trajectory_valid`, plus shared correctness/safety metrics.
+3. Use **Section 5.2** to confirm the exact evaluator bundle for pipeline runs.
+4. Use **Section 7** to interpret pass rate, means, and failure rows from summary output.
+
+### C) Real-run reliability over time
+
+1. Jump to **Section 8** for historical metrics and calibration.
+2. Focus on `pass_rate`, `human_intervention_rate`, `deploy_success_rate`, `mean/median time`, and `brier_score`.
+3. Use this layer to track operational reliability trends, not prompt-only quality.
+
+
 ## 1) Evaluation Layers
 
 The project has two evaluation layers:

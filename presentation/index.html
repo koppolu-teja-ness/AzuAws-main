@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Azure → AWS Migration Agent — Presentation</title>
+<style>
+  :root {
+    --azure: #0078d4;
+    --aws: #ff9900;
+    --ink: #1b2733;
+    --muted: #5b6b7b;
+    --bg: #0f1b2d;
+    --card: #ffffff;
+    --soft: #eef3f8;
+    --line: #d9e2ec;
+    --good: #2e7d32;
+    --warn: #b8860b;
+    --accent: #5b5bd6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    height: 100%;
+    font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  .deck { width: 100%; }
+  .slide {
+    position: relative;
+    width: 1120px;
+    min-height: 630px;
+    margin: 28px auto;
+    background: var(--card);
+    border-radius: 16px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.35);
+    padding: 54px 64px 60px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .slide::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 8px;
+    background: linear-gradient(90deg, var(--azure), var(--accent) 55%, var(--aws));
+  }
+  .eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 2.5px;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 14px;
+  }
+  h1 { font-size: 44px; line-height: 1.1; margin-bottom: 18px; }
+  h2 { font-size: 34px; line-height: 1.15; margin-bottom: 20px; }
+  h3 { font-size: 20px; margin-bottom: 8px; }
+  p { font-size: 18px; line-height: 1.55; color: var(--muted); }
+  .lead { font-size: 21px; color: var(--ink); line-height: 1.5; }
+  ul { margin: 6px 0 0 20px; }
+  li { font-size: 18px; line-height: 1.65; margin-bottom: 8px; color: var(--ink); }
+  li b { color: var(--ink); }
+  .muted { color: var(--muted); }
+  .footer {
+    position: absolute;
+    bottom: 22px; left: 64px; right: 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    color: var(--muted);
+    border-top: 1px solid var(--line);
+    padding-top: 12px;
+  }
+  .pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    background: var(--soft);
+    color: var(--ink);
+    border: 1px solid var(--line);
+  }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .card {
+    background: var(--soft);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card h3 { color: var(--azure); font-size: 18px; }
+  .card p { font-size: 15.5px; }
+  .tag { font-size: 13px; font-weight: 700; color: var(--accent); }
+
+  /* Title slide */
+  .title-slide {
+    background: radial-gradient(1200px 500px at 15% -10%, rgba(0,120,212,0.18), transparent 60%),
+                radial-gradient(1000px 500px at 110% 120%, rgba(255,153,0,0.18), transparent 55%),
+                var(--card);
+    justify-content: center;
+  }
+  .title-slide h1 { font-size: 52px; }
+  .title-badges { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 26px; }
+  .flow { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+  .node {
+    flex: 1 1 0;
+    min-width: 120px;
+    background: var(--soft);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 10px;
+    text-align: center;
+    font-size: 13.5px;
+    position: relative;
+  }
+  .node .n { display: block; font-weight: 700; font-size: 13px; color: var(--azure); margin-bottom: 4px; }
+  .node.llm { background: #fff3e6; border-color: var(--aws); }
+  .node.llm .n { color: #d2691e; }
+  .node.gate { background: #fff8e1; border-color: var(--warn); }
+  .node.gate .n { color: var(--warn); }
+  .node.end { background: #e7f6ea; border-color: var(--good); }
+  .node.end .n { color: var(--good); }
+  .arrow { align-self: center; color: var(--muted); font-size: 20px; }
+  .two-col { display: grid; grid-template-columns: 1.1fr 1fr; gap: 30px; align-items: start; }
+  .kpi { font-size: 40px; font-weight: 800; color: var(--azure); line-height: 1; }
+  .kpi.alt { color: var(--aws); }
+  .kpi-label { font-size: 14px; color: var(--muted); margin-top: 6px; }
+  .legend { display: flex; gap: 18px; margin-top: 14px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .dot { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+  .table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .table th, .table td { text-align: left; padding: 9px 12px; font-size: 15.5px; border-bottom: 1px solid var(--line); }
+  .table th { color: var(--muted); font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
+  .table td b { color: var(--ink); }
+  .arrowc { color: var(--aws); font-weight: 700; }
+
+  /* Conceptual architecture chevron flow */
+  .chev-row { display: flex; align-items: stretch; margin: 10px 0 2px; }
+  .chev {
+    position: relative;
+    flex: 1;
+    min-height: 62px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+    text-align: center;
+    padding: 10px 14px 10px 26px;
+    margin-right: -16px;
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%, 18px 50%);
+  }
+  .chev:first-child {
+    padding-left: 16px;
+    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 50%, calc(100% - 18px) 100%, 0 100%);
+  }
+  .chev-desc-row { display: flex; margin-top: 10px; }
+  .chev-desc { flex: 1; text-align: center; font-size: 13px; color: var(--muted); padding: 0 8px; line-height: 1.3; }
+  .foundations {
+    margin-top: 20px;
+    background: linear-gradient(90deg, #f3f0ff, #eef3f8);
+    border: 1.5px solid var(--accent);
+    border-radius: 14px;
+    padding: 18px 22px;
+  }
+  .foundations h3 { color: var(--accent); margin-bottom: 14px; font-size: 18px; }
+  .found-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .found-item { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .found-item b { font-size: 15px; color: var(--ink); }
+  .found-item p { font-size: 13px; margin-top: 4px; }
+
+  /* Pipeline snake flow */
+  .pipe { margin-top: 6px; }
+  .pipe-row { display: flex; align-items: stretch; gap: 0; }
+  .pipe-row.reverse { flex-direction: row-reverse; }
+  .pnode {
+    flex: 1;
+    background: var(--soft);
+    border: 1.5px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 10px;
+    text-align: center;
+    min-height: 74px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .pnode .n { font-weight: 700; font-size: 13px; color: var(--azure); margin-bottom: 4px; }
+  .pnode .d { font-size: 12.5px; color: var(--ink); line-height: 1.25; }
+  .pnode.llm { background: #fff3e6; border-color: var(--aws); }
+  .pnode.llm .n { color: #d2691e; }
+  .pnode.gate { background: #fff8e1; border-color: var(--warn); }
+  .pnode.gate .n { color: var(--warn); }
+  .pnode.end { background: #e7f6ea; border-color: var(--good); }
+  .pnode.end .n { color: var(--good); }
+  .pnode.note { background: #fff8e1; border-color: var(--warn); border-style: dashed; }
+  .pnode.note .n { color: var(--warn); }
+  .harrow { flex: 0 0 34px; display: flex; align-items: center; justify-content: center; color: #90a4b8; font-size: 22px; font-weight: 700; }
+  .vconn { display: flex; height: 30px; align-items: center; }
+  .vconn.right { justify-content: flex-end; padding-right: calc(12.5% - 8px); }
+  .vconn.left { justify-content: flex-start; padding-left: calc(12.5% - 8px); }
+  .vconn span { color: #90a4b8; font-size: 22px; font-weight: 700; }
+
+  @media print {
+    html, body { background: #fff; }
+    .slide { box-shadow: none; margin: 0; page-break-after: always; border-radius: 0; width: 100%; min-height: 100vh; }
+    .hint { display: none !important; }
+  }
+  .hint {
+    position: fixed;
+    bottom: 14px; right: 16px;
+    background: rgba(255,255,255,0.9);
+    color: var(--ink);
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- Slide 1: Title -->
+  <section class="slide title-slide">
+    <div class="eyebrow">Capstone Project · Agentic Cloud Migration</div>
+    <h1>Azure Bicep → AWS CloudFormation<br/>Migration Agent</h1>
+    <p class="lead">An agentic, human-gated pipeline that translates Azure infrastructure-as-code
+    into AWS CloudFormation — safely, auditably, and with the human in control.</p>
+    <div class="title-badges">
+      <span class="pill">7-Agent LangGraph Pipeline</span>
+      <span class="pill">AWS Bedrock Reasoning</span>
+      <span class="pill">Human-in-the-Loop Gates</span>
+      <span class="pill">Security Guardrails</span>
+      <span class="pill">RAG Knowledge Base</span>
+    </div>
+    <div class="footer">
+      <span>Azure → AWS IaC Migration</span>
+      <span>Slide 1 · Overview</span>
+    </div>
+  </section>
+
+  <!-- Slide 2: Business Problem -->
+  <section class="slide">
+    <div class="eyebrow">Business Problem</div>
+    <h2>Why organizations migrate — and why it stalls</h2>
+    <div class="two-col">
+      <div>
+        <p class="lead" style="margin-bottom:16px;">Companies move workloads from Azure to AWS for real business
+        reasons — but the infrastructure-as-code rewrite becomes the bottleneck that delays the whole program.</p>
+        <ul>
+          <li><b>Cost optimization</b> — consolidating onto a preferred cloud or better pricing.</li>
+          <li><b>Mergers &amp; acquisitions</b> — two companies, two clouds, one target platform.</li>
+          <li><b>Avoiding vendor lock-in</b> — staying portable across providers.</li>
+          <li><b>Customer &amp; compliance mandates</b> — running where the business must.</li>
+        </ul>
+      </div>
+      <div class="grid2" style="gap:14px; align-content:start;">
+        <div class="card" style="text-align:center;"><div class="kpi">Weeks</div><div class="kpi-label">of manual rework per workload</div></div>
+        <div class="card" style="text-align:center;"><div class="kpi alt">High</div><div class="kpi-label">cost of specialist cloud engineers</div></div>
+        <div class="card" style="text-align:center;"><div class="kpi">Outages</div><div class="kpi-label">risk from manual translation errors</div></div>
+        <div class="card" style="text-align:center;"><div class="kpi alt">Leaks</div><div class="kpi-label">exposure of secrets &amp; access</div></div>
+      </div>
+    </div>
+    <p style="margin-top:18px; font-size:17px;"><b>The goal:</b> cut migration time, cost, and risk with an
+    automated, auditable, repeatable pipeline — so teams ship migrations with confidence.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 2 · Business Problem</span></div>
+  </section>
+
+  <!-- Slide 3: Technical Problem -->
+  <section class="slide">
+    <div class="eyebrow">The Problem</div>
+    <h2>Moving infrastructure between clouds is hard and risky</h2>
+    <div class="two-col">
+      <div>
+        <p class="lead" style="margin-bottom:18px;">Teams that need to migrate from Azure to AWS
+        must rewrite their infrastructure code by hand. This is slow, error-prone, and easy to get wrong.</p>
+        <ul>
+          <li><b>Manual rewrites</b> of Bicep into CloudFormation take time and introduce mistakes.</li>
+          <li><b>No audit trail</b> — it is unclear why each resource was mapped a certain way.</li>
+          <li><b>Security risks</b> — secrets can leak and over-permissive rules slip through.</li>
+          <li><b>Existing tools fall short</b> — they reverse-engineer live accounts or move within one cloud, not source-to-source across clouds.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Why not just ask an LLM?</h3>
+        <p>Asking a model to write CloudFormation directly in one shot is unreliable and unauditable.
+        It can hallucinate syntax, leak secrets, and leaves no record of its decisions.</p>
+        <p style="margin-top:12px;"><b>This project takes a safer, structured approach.</b></p>
+      </div>
+    </div>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 3 · The Problem</span></div>
+  </section>
+
+  <!-- Slide 3: Solution -->
+  <section class="slide">
+    <div class="eyebrow">The Solution</div>
+    <h2>A multi-agent pipeline with one reasoning step and human checkpoints</h2>
+    <p class="lead" style="margin-bottom:22px;">Seven agents work together in a LangGraph state
+    machine. Deterministic code does the parsing, rendering, and deploying. A single LLM call
+    does only the reasoning. Humans approve the important decisions.</p>
+    <div class="grid3">
+      <div class="card">
+        <span class="tag">AUDITABLE</span>
+        <h3>Structured, not freeform</h3>
+        <p>The LLM emits a structured JSON migration plan — never raw template text — so every decision is reviewable and replayable.</p>
+      </div>
+      <div class="card">
+        <span class="tag">SAFE</span>
+        <h3>Humans stay in control</h3>
+        <p>Mandatory plan approval plus conditional security and stack-conflict gates before anything touches AWS.</p>
+      </div>
+      <div class="card">
+        <span class="tag">RELIABLE</span>
+        <h3>Self-correcting</h3>
+        <p>Validation failures loop back to the reasoning step with feedback, so the pipeline fixes its own mistakes.</p>
+      </div>
+    </div>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 4 · The Solution</span></div>
+  </section>
+
+  <!-- Slide 5: How we're different -->
+  <section class="slide">
+    <div class="eyebrow">Differentiation</div>
+    <h2>How this is different from existing tools</h2>
+    <p class="lead" style="margin-bottom:18px;">Existing tools either reverse-engineer a live cloud account or
+    move workloads <i>within</i> one cloud. None do source-code-level, cross-cloud IaC translation with
+    self-correction, guardrails, and gated deployment.</p>
+    <table class="table">
+      <thead>
+        <tr><th>Tool</th><th>Approach</th><th>Cross-cloud source</th><th>Self-correcting</th><th>Security gate</th><th>Human-gated deploy</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>Former2</b></td><td>Reverse-engineers a live AWS account into IaC</td><td>No — within AWS</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td><b>cf-terraform</b></td><td>Converts CloudFormation ↔ Terraform</td><td>No — same provider</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td><b>Azure Migrate</b></td><td>Moves workloads within / into Azure</td><td>No — within cloud</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr style="background:#e7f6ea;"><td><b>This project</b></td><td>Source Bicep → CloudFormation across clouds</td><td><b>Yes</b></td><td><b>Yes</b></td><td><b>Yes</b></td><td><b>Yes</b></td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:18px; font-size:16px;"><b>The unique combination:</b> a deterministic-render / LLM-reason split,
+    security guardrails, secret protection, and a self-extending knowledge base — purpose-built for safe cross-cloud migration.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 5 · Differentiation</span></div>
+  </section>
+
+  <!-- Slide 6: Core Design Principle -->
+  <section class="slide">
+    <div class="eyebrow">Core Design Principle</div>
+    <h2>Separate reasoning from execution</h2>
+    <p class="lead" style="margin-bottom:24px;">The key rule: <b>the LLM only reasons and produces
+    a plan — it never writes CloudFormation syntax directly.</b> Everything else is deterministic code.</p>
+    <div class="grid2">
+      <div class="card" style="background:#fff3e6; border-color:var(--aws);">
+        <h3 style="color:#d2691e;">LLM reasoning (AWS Bedrock)</h3>
+        <ul>
+          <li>Maps each Azure resource to its AWS equivalent</li>
+          <li>Produces a structured <b>migration plan</b> (resources, parameters, outputs, conditions)</li>
+          <li>One call per run — the only non-deterministic step</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Deterministic code (no LLM)</h3>
+        <ul>
+          <li>Compile Bicep → ARM JSON</li>
+          <li>Build a cloud-neutral representation</li>
+          <li>Render CloudFormation YAML, lint, deploy, verify</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:22px; font-size:17px;"><b>Result:</b> an auditable, replayable pipeline where no component
+    makes surprise network calls or mutates AWS state outside the deploy step.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 6 · Design Principle</span></div>
+  </section>
+
+  <!-- Slide 7: Conceptual architecture -->
+  <section class="slide">
+    <div class="eyebrow">Conceptual Architecture</div>
+    <h2>A layered view of the system</h2>
+    <p style="font-size:16px; margin-bottom:6px;">The migration flows through six stages. Reasoning is
+    isolated to a single stage — every other stage is deterministic and governed.</p>
+    <div class="chev-row">
+      <div class="chev" style="background:#0078d4;">Source</div>
+      <div class="chev" style="background:#2b7fc4;">Ingest &amp; Normalize</div>
+      <div class="chev" style="background:#d2691e;">Reason</div>
+      <div class="chev" style="background:#b8860b;">Govern</div>
+      <div class="chev" style="background:#3e7cb1;">Execute</div>
+      <div class="chev" style="background:#2e7d32;">Target</div>
+    </div>
+    <div class="chev-desc-row">
+      <div class="chev-desc">Azure Bicep / live resource group</div>
+      <div class="chev-desc">Compile to ARM, build neutral model</div>
+      <div class="chev-desc">LLM plan grounded by the RAG KB</div>
+      <div class="chev-desc">Human gates + security guardrails</div>
+      <div class="chev-desc">Render, deploy and verify</div>
+      <div class="chev-desc">AWS CloudFormation stack</div>
+    </div>
+    <div class="foundations">
+      <h3>Cross-cutting foundations · applied across every stage</h3>
+      <div class="found-grid">
+        <div class="found-item"><b>Secret protection</b><p>Masked wrappers and log redaction end-to-end.</p></div>
+        <div class="found-item"><b>Observability</b><p>Per-run artifacts and opt-in tracing.</p></div>
+        <div class="found-item"><b>Evaluation &amp; calibration</b><p>Benchmark scores and reliability metrics.</p></div>
+      </div>
+    </div>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 7 · Conceptual Architecture</span></div>
+  </section>
+
+  <!-- Slide 8: Pipeline / Architecture -->
+  <section class="slide">
+    <div class="eyebrow">Architecture</div>
+    <h2>The 7-agent LangGraph pipeline</h2>
+    <div class="pipe">
+      <div class="pipe-row">
+        <div class="pnode"><span class="n">AGENT 0</span><span class="d">Export resource group (optional)</span></div>
+        <div class="harrow">›</div>
+        <div class="pnode"><span class="n">AGENT 1</span><span class="d">Validate &amp; check KB coverage</span></div>
+        <div class="harrow">›</div>
+        <div class="pnode"><span class="n">AGENT 2</span><span class="d">Build cloud-neutral model</span></div>
+        <div class="harrow">›</div>
+        <div class="pnode llm"><span class="n">AGENT 3</span><span class="d">Map resources (Bedrock LLM)</span></div>
+      </div>
+      <div class="vconn right"><span>↓</span></div>
+      <div class="pipe-row reverse">
+        <div class="pnode gate"><span class="n">PLAN GATE</span><span class="d">Human approval (mandatory)</span></div>
+        <div class="harrow">‹</div>
+        <div class="pnode"><span class="n">AGENT 4</span><span class="d">Render CloudFormation</span></div>
+        <div class="harrow">‹</div>
+        <div class="pnode"><span class="n">AGENT 5</span><span class="d">Validate with cfn-lint</span></div>
+        <div class="harrow">‹</div>
+        <div class="pnode gate"><span class="n">GATES</span><span class="d">Guardrail + stack conflict</span></div>
+      </div>
+      <div class="vconn left"><span>↓</span></div>
+      <div class="pipe-row">
+        <div class="pnode"><span class="n">AGENT 6</span><span class="d">Deploy via boto3</span></div>
+        <div class="harrow">›</div>
+        <div class="pnode"><span class="n">AGENT 6b</span><span class="d">Post-deploy verify</span></div>
+        <div class="harrow">›</div>
+        <div class="pnode end"><span class="n">AGENT 7</span><span class="d">Report + history + calibration</span></div>
+        <div class="harrow"></div>
+        <div class="pnode note"><span class="n">↺ SELF-CORRECTION</span><span class="d">cfn-lint fail loops Agent 5 → Agent 3 (retry limit)</span></div>
+      </div>
+    </div>
+    <div class="legend" style="margin-top:20px;">
+      <span><span class="dot" style="background:var(--soft);border:1px solid var(--line);"></span>Deterministic code</span>
+      <span><span class="dot" style="background:#ffd9a8;"></span>LLM reasoning</span>
+      <span><span class="dot" style="background:#ffe9a8;"></span>Human gate</span>
+      <span><span class="dot" style="background:#bfe6c6;"></span>Report / end</span>
+    </div>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 8 · Pipeline</span></div>
+  </section>
+
+  <!-- Slide 6: Human-in-the-loop -->
+  <section class="slide">
+    <div class="eyebrow">Safety</div>
+    <h2>Three human-in-the-loop gates</h2>
+    <p class="lead" style="margin-bottom:22px;">Humans approve the decisions that matter. One gate is
+    always required; two are conditional — they only prompt when there is a real risk to resolve.</p>
+    <div class="grid3">
+      <div class="card" style="background:#fff8e1; border-color:var(--warn);">
+        <span class="tag" style="color:var(--warn);">MANDATORY</span>
+        <h3 style="color:var(--warn);">Plan approval</h3>
+        <p>Review the LLM's resource mapping table before any CloudFormation is generated. Explicit "yes" required.</p>
+      </div>
+      <div class="card" style="background:#fff8e1; border-color:var(--warn);">
+        <span class="tag" style="color:var(--warn);">CONDITIONAL</span>
+        <h3 style="color:var(--warn);">Guardrail scan</h3>
+        <p>Only prompts when HIGH/CRITICAL security findings exist in the rendered template.</p>
+      </div>
+      <div class="card" style="background:#fff8e1; border-color:var(--warn);">
+        <span class="tag" style="color:var(--warn);">CONDITIONAL</span>
+        <h3 style="color:var(--warn);">Stack conflict</h3>
+        <p>Only prompts when the target stack already exists — choose update, delete-recreate, or cancel.</p>
+      </div>
+    </div>
+    <p style="margin-top:22px; font-size:17px;"><b>Once gates pass, deployment is fully automatic</b> — no
+    confirmation prompt and no manual parameter entry. Parameter values resolve from files, environment
+    variables, or the source Key Vault in a clear priority order.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 9 · Human Gates</span></div>
+  </section>
+
+  <!-- Slide 7: Security & Secrets -->
+  <section class="slide">
+    <div class="eyebrow">Security &amp; Guardrails</div>
+    <h2>Scanning for risks and protecting secrets</h2>
+    <div class="two-col">
+      <div>
+        <h3 style="color:var(--azure); margin-bottom:10px;">Guardrail security scan</h3>
+        <ul>
+          <li><b>checkov</b> — ~1000 built-in CloudFormation policy checks (encryption, public access, logging).</li>
+          <li><b>Hardcoded secrets</b> — flags literal secret values outside NoEcho parameters.</li>
+          <li><b>Over-permissive IAM</b> — flags wildcard Action / Resource / Principal.</li>
+          <li><b>Open network ingress</b> — flags security groups open to 0.0.0.0/0 on sensitive ports.</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="color:var(--azure); margin-bottom:10px;">Secrets handling</h3>
+        <ul>
+          <li>Secret values are wrapped so they print as <b>***</b> in logs and state dumps.</li>
+          <li>A root logging filter redacts secrets before they reach any handler.</li>
+          <li><b>Plaintext never written to disk</b>; real values are only revealed at the AWS API boundary.</li>
+          <li>No secrets passed via CLI flags — avoids shell history and process-list exposure.</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:18px; font-size:16px;"><b>Severity drives behavior:</b> HIGH/CRITICAL findings block
+    and require approval; MEDIUM/LOW are advisory and logged to the run report.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 10 · Security</span></div>
+  </section>
+
+  <!-- Slide 8: Knowledge base & RAG -->
+  <section class="slide">
+    <div class="eyebrow">Knowledge Base &amp; RAG</div>
+    <h2>Grounded mappings, not guesswork</h2>
+    <p class="lead" style="margin-bottom:22px;">Each Azure resource type maps to a human-reviewed markdown
+    document describing its AWS equivalent. The LLM retrieves the right docs before reasoning — so its plan
+    is grounded in trusted guidance.</p>
+    <div class="grid3">
+      <div class="card">
+        <h3>Mapping docs</h3>
+        <p>Concept differences plus resource, parameter, and property mappings for each Azure → AWS pair.</p>
+      </div>
+      <div class="card">
+        <h3>Hybrid retrieval</h3>
+        <p>Vector search (Chroma) fused with BM25 keyword scoring via reciprocal rank fusion for better recall.</p>
+      </div>
+      <div class="card">
+        <h3>Seed-and-grow</h3>
+        <p>Unknown resource types trigger a human prompt. The KB expands with new families over time.</p>
+      </div>
+    </div>
+    <p style="margin-top:22px; font-size:17px;">An unmapped resource type is caught early — the pipeline asks
+    before migrating anything it does not understand, rather than failing silently.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 11 · Knowledge Base</span></div>
+  </section>
+
+  <!-- Slide 9: Resource coverage -->
+  <section class="slide">
+    <div class="eyebrow">Resource Coverage</div>
+    <h2>What the agent can migrate today</h2>
+    <table class="table">
+      <thead>
+        <tr><th>Azure</th><th></th><th>AWS</th><th>Scope</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>Key Vault</b> + secrets</td><td class="arrowc">→</td><td>Secrets Manager</td><td>Vaults and secret values</td></tr>
+        <tr><td><b>Virtual Network</b></td><td class="arrowc">→</td><td>VPC + Subnets</td><td>NSGs, route tables, NAT gateways, public IPs</td></tr>
+        <tr><td><b>Azure Functions</b></td><td class="arrowc">→</td><td>Lambda + IAM + S3</td><td>Triggers and packaging workflows</td></tr>
+        <tr><td><b>Blob Storage</b> container</td><td class="arrowc">→</td><td>S3 Bucket</td><td>Standalone application blob data</td></tr>
+        <tr><td><b>Storage Queue / Service Bus</b></td><td class="arrowc">→</td><td>SQS / SNS</td><td>Queues, topics, subscriptions</td></tr>
+      </tbody>
+    </table>
+    <p style="margin-top:20px; font-size:16px;">Coverage is intentionally growing. The architecture supports
+    adding new resource families incrementally by authoring a mapping doc and registering it in the knowledge base index.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 12 · Coverage</span></div>
+  </section>
+
+  <!-- Slide 10: Evaluation -->
+  <section class="slide">
+    <div class="eyebrow">Evaluation &amp; Calibration</div>
+    <h2>Measuring quality and reliability</h2>
+    <div class="two-col">
+      <div>
+        <h3 style="color:var(--azure); margin-bottom:10px;">Benchmark harness</h3>
+        <ul>
+          <li>Curated reference examples with human-reviewed expectations.</li>
+          <li>Scores the LLM step: plan validity, parameter hygiene, resource-type accuracy, retrieval quality.</li>
+          <li>Also runs a trimmed pipeline (Agents 1–5) that never deploys — safe for CI-style checks.</li>
+          <li>Supports prompt-version comparison to tune the reasoning step.</li>
+        </ul>
+      </div>
+      <div>
+        <h3 style="color:var(--azure); margin-bottom:10px;">Run-history calibration</h3>
+        <ul>
+          <li>Every real run appends its outcome to a history log.</li>
+          <li>Aggregate metrics: pass rate, human-intervention rate, deploy success rate.</li>
+          <li>Timing and <b>Brier score</b> track reliability over time.</li>
+          <li>A calibration report is regenerated after each run.</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:18px; font-size:16px;">This two-layer approach separates <b>prompt quality</b> from
+    <b>operational reliability</b> — important for a portfolio-grade capstone.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 13 · Evaluation</span></div>
+  </section>
+
+  <!-- Slide 11: Tech stack -->
+  <section class="slide">
+    <div class="eyebrow">Technology</div>
+    <h2>Built on a focused, modern stack</h2>
+    <div class="grid4">
+      <div class="card"><h3>LangGraph</h3><p>State-graph orchestration with human-in-the-loop interrupts.</p></div>
+      <div class="card"><h3>AWS Bedrock</h3><p>The single LLM reasoning step that produces the migration plan.</p></div>
+      <div class="card"><h3>boto3</h3><p>Real CloudFormation deploy and post-deploy verification.</p></div>
+      <div class="card"><h3>cfn-lint</h3><p>Deterministic template validation with a self-correction loop.</p></div>
+      <div class="card"><h3>checkov</h3><p>Security policy scanning of the rendered template.</p></div>
+      <div class="card"><h3>Chroma + BM25</h3><p>Hybrid retrieval over the knowledge base.</p></div>
+      <div class="card"><h3>LangSmith</h3><p>Opt-in tracing and evaluation with secret redaction.</p></div>
+      <div class="card"><h3>Python + pytest</h3><p>Deterministic nodes and guardrails, fully testable.</p></div>
+    </div>
+    <p style="margin-top:22px; font-size:16px;">Persistence is simple flat files — per-run artifacts, a history
+    log, and a calibration report. No database required at this scale.</p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 14 · Tech Stack</span></div>
+  </section>
+
+  <!-- Slide 12: Summary -->
+  <section class="slide">
+    <div class="eyebrow">Summary</div>
+    <h2>Why this approach works</h2>
+    <div class="grid3" style="margin-bottom:26px;">
+      <div class="card" style="text-align:center;">
+        <div class="kpi">7</div>
+        <div class="kpi-label">agents in one LangGraph pipeline</div>
+      </div>
+      <div class="card" style="text-align:center;">
+        <div class="kpi alt">1</div>
+        <div class="kpi-label">LLM reasoning step — everything else deterministic</div>
+      </div>
+      <div class="card" style="text-align:center;">
+        <div class="kpi">3</div>
+        <div class="kpi-label">human gates before AWS is touched</div>
+      </div>
+    </div>
+    <ul>
+      <li><b>Auditable:</b> structured plans and per-run artifacts make every decision reviewable.</li>
+      <li><b>Safe:</b> human gates, guardrail scanning, and secret protection guard every deploy.</li>
+      <li><b>Reliable:</b> self-correction plus calibration metrics keep quality measurable over time.</li>
+      <li><b>Extensible:</b> a seed-and-grow knowledge base adds new resource families incrementally.</li>
+    </ul>
+    <p style="margin-top:22px;" class="lead"><b>A practical, trustworthy path from Azure Bicep to AWS CloudFormation.</b></p>
+    <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 15 · Thank You</span></div>
+  </section>
+
+</div>
+<div class="hint">Use ↑ / ↓ or Space to scroll · Press Ctrl+P to export as PDF</div>
+<script>
+  document.addEventListener('keydown', function (e) {
+    var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+    if (e.key === 'ArrowDown' || e.key === ' ' || e.key === 'PageDown') {
+      e.preventDefault();
+      var next = slides.find(function (s) { return s.getBoundingClientRect().top > 5; });
+      if (next) next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault();
+      var prev = null;
+      for (var i = 0; i < slides.length; i++) {
+        if (slides[i].getBoundingClientRect().top < -5) prev = slides[i];
+      }
+      if (prev) prev.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+</script>
+</body>
+</html>

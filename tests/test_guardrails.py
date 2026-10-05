@@ -258,22 +258,22 @@ def test_guardrail_gate_auto_continues_on_clean_template(tmp_path, monkeypatch):
     assert result["agent_log"][0]["status"] in ("ok", "warning")
 
 
-def test_guardrail_gate_stops_when_human_declines_blocking_findings(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli_ui, "confirm", lambda *_: False)
-    gate = make_guardrail_scan_gate(_config())
-    result = gate(_gate_state(tmp_path, ADVERSARIAL_TEMPLATE))
-    assert result["stopped"] is True
-    assert "guardrail" in result["stop_reason"].lower()
-    assert len(result["guardrail_findings"]) > 0
-    assert Path(result["guardrail_report_path"]).exists()
-
-
-def test_guardrail_gate_continues_when_human_approves_blocking_findings(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli_ui, "confirm", lambda *_: True)
+def test_guardrail_gate_auto_continues_on_blocking_findings_without_prompt(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli_ui, "confirm", lambda *_: pytest.fail("guardrail gate should not prompt"))
     gate = make_guardrail_scan_gate(_config())
     result = gate(_gate_state(tmp_path, ADVERSARIAL_TEMPLATE))
     assert result.get("stopped") is not True
     assert len(result["guardrail_findings"]) > 0
+    assert Path(result["guardrail_report_path"]).exists()
+
+
+def test_guardrail_gate_logs_warning_on_blocking_findings(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli_ui, "confirm", lambda *_: pytest.fail("guardrail gate should not prompt"))
+    gate = make_guardrail_scan_gate(_config())
+    result = gate(_gate_state(tmp_path, ADVERSARIAL_TEMPLATE))
+    assert result.get("stopped") is not True
+    assert len(result["guardrail_findings"]) > 0
+    assert result["agent_log"][0]["status"] == "warning"
 
 
 def test_guardrail_gate_disabled_via_config_skips_scan_entirely(tmp_path, monkeypatch):

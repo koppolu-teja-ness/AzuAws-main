@@ -134,12 +134,12 @@ def _route_after_validate(state: MigrationState) -> str:
 
 
 def _route_after_plan_gate(state: MigrationState) -> str:
-    return "render" if state.get("plan_confirmed") else "stop"
+    return "done" if state.get("plan_confirmed") else "stop"
 
 
 def _route_after_lint(state: MigrationState) -> str:
     if state.get("lint_passed"):
-        return "done"
+        return "plan_gate"
     if state.get("fix_attempts", 0) < state.get("max_fix_attempts", 2):
         return "retry"
     return "done"  # retries exhausted -- stop here, same as the real graph's lint_give_up (no deploy either way)
@@ -161,10 +161,14 @@ def build_eval_graph(knowledge_base: KnowledgeBase, generator: Generator, config
     graph.set_entry_point("agent1_validate")
     graph.add_conditional_edges("agent1_validate", _route_after_validate, {"stop": END, "continue": "agent2_build_cnr"})
     graph.add_edge("agent2_build_cnr", "agent3_map_resources")
-    graph.add_edge("agent3_map_resources", "plan_approval_gate")
-    graph.add_conditional_edges("plan_approval_gate", _route_after_plan_gate, {"render": "agent4_render", "stop": END})
+    graph.add_edge("agent3_map_resources", "agent4_render")
     graph.add_edge("agent4_render", "agent5_validate_cfn")
-    graph.add_conditional_edges("agent5_validate_cfn", _route_after_lint, {"retry": "bump_fix_attempts", "done": END})
+    graph.add_conditional_edges(
+        "agent5_validate_cfn",
+        _route_after_lint,
+        {"retry": "bump_fix_attempts", "plan_gate": "plan_approval_gate", "done": END},
+    )
+    graph.add_conditional_edges("plan_approval_gate", _route_after_plan_gate, {"done": END, "stop": END})
     graph.add_edge("bump_fix_attempts", "agent3_map_resources")
     return graph.compile()
 

@@ -10,11 +10,11 @@ It reflects the implemented LangGraph flow in `orchestrator/graph.py` and the no
 
 ## Why this workflow matters
 
-The workflow is intentionally split into deterministic stages + one LLM reasoning stage + human gates.
+The workflow is intentionally split into deterministic stages + one LLM reasoning stage + a single interactive stack gate.
 
 This gives you:
 - Better control and auditability (every step writes structured state and artifacts).
-- Safer deployments (plan approval, guardrail security gate, and stack conflict gate).
+- Safer deployments (automatic plan/guardrail checkpoints plus stack conflict gate).
 - Better quality output (cfn-lint retry loop feeds failures back to Agent 3 for correction).
 - Lower risk than direct "Bicep -> CloudFormation in one LLM call".
 
@@ -26,17 +26,15 @@ flowchart TD
     A0 --> A1[agent1_validate]
     A1 --> A2[agent2_build_cnr]
     A2 --> A3[agent3_map_resources]
-    A3 --> G1{plan_approval_gate}
-    G1 -->|approved| A4[agent4_render]
-    G1 -->|rejected| A7[agent7_report]
+    A3 --> A4[agent4_render]
     A4 --> A5[agent5_validate_cfn]
-    A5 -->|lint fail, retries left| B[bump_fix_attempts]
+    A5 -->|lint not clean, retries left| B[bump_fix_attempts]
     B --> A3
-    A5 -->|lint fail, no retries| L[lint_give_up]
+    A5 -->|lint not clean, no retries| L[lint_give_up]
     L --> A7
-    A5 -->|lint pass| G2{guardrail_scan_gate}
-    G2 -->|blocked/cancelled| A7
-    G2 -->|clean/approved| G3{stack_check_gate}
+    A5 -->|lint clean| G1{plan_approval_gate auto}
+    G1 --> G2{guardrail_scan_gate auto}
+    G2 -->|continued| G3{stack_check_gate}
     G3 -->|cancelled/blocked| A7
     G3 -->|proceed| A6[agent6_deploy]
     A6 --> V6[agent6_verify]
@@ -70,9 +68,8 @@ Input:
 - `resource_group`, `subscription_id` (only when resource-group mode is used)
 
 Process:
-- Asks which service scope to export.
-- Exports matching resources from Azure resource group into source template JSON.
-- If Key Vault scope is selected, attempts to fetch source secret values for later parameter carry-over.
+- Exports the full Azure resource group into source template JSON.
+- Attempts to fetch source Key Vault secret values for later parameter carry-over.
 
 Output:
 - `bicep_path` (path to exported source JSON)
@@ -154,7 +151,7 @@ Why important:
 - This is the core reasoning step: Azure intent -> AWS design mapping.
 - Keeps output structured (plan JSON), not free-form template text.
 
-### Gate: `plan_approval_gate` (mandatory human gate)
+### Gate: `plan_approval_gate` (automatic checkpoint)
 
 Input:
 - `migration_plan`
@@ -162,16 +159,15 @@ Input:
 
 Process:
 - Displays plan summary (resources, parameters, conditions, outputs).
-- Requires explicit reviewer approval.
+- Runs only after `agent5_validate_cfn` reports a clean lint result (0 errors, 0 warnings).
+- Auto-approves in non-interactive mode.
 
 Output:
 - `plan_confirmed`
-- `human_decisions`
-- `stopped`, `stop_reason` (if rejected)
 - `agent_log`
 
 Why important:
-- Human control point before CloudFormation is generated.
+- Logged review checkpoint before deployment can proceed.
 - Prevents auto-propagating an incorrect architecture decision.
 
 ### Agent 4: `agent4_render`
@@ -201,6 +197,7 @@ Input:
 Process:
 - Runs cfn-lint.
 - Counts errors/warnings.
+- Treats any warning as not-clean (same as errors) for retry purposes.
 - Appends attempt history and writes detailed validation report.
 
 Output:
@@ -251,19 +248,17 @@ Input:
 
 Process:
 - Runs security scanning with Checkov + custom checks.
-- If HIGH/CRITICAL findings exist, prompts for explicit approval.
+- Reports findings (including HIGH/CRITICAL) and auto-continues in non-interactive mode.
 - Writes guardrail report artifact.
 
 Output:
 - `guardrail_findings`
 - `guardrail_report_path`
-- `human_decisions` (if prompted)
-- `stopped`, `stop_reason` (if declined)
 - `agent_log`
 
 Why important:
 - Adds security risk gate after correctness linting and before deployment.
-- Prevents avoidable high-severity security misconfigurations from being deployed silently.
+- Surfaces high-severity security misconfigurations clearly in artifacts and logs.
 
 ### Gate: `stack_check_gate`
 
@@ -273,10 +268,10 @@ Input:
 Process:
 - Checks whether stack exists and current status.
 - Handles blocked statuses (delete/recreate prompt).
-- For existing stack, asks update vs delete/recreate vs cancel.
+- For existing stack, asks delete/recreate vs cancel.
 
 Output:
-- `stack_action` (`create` or `update`)
+- `stack_action` (`create`)
 - `human_decisions` (if prompted)
 - `stopped`, `stop_reason` (if cancelled/blocked)
 - `agent_log`
@@ -355,4 +350,4 @@ Everything else is deterministic execution, validation, gating, deployment safet
 
 This architecture is important because it balances:
 - flexibility (LLM can reason about mappings), and
-- reliability (deterministic rendering + lint + security + human gates + logs).
+- reliability (deterministic rendering + lint + security checkpoints + stack gate + logs).

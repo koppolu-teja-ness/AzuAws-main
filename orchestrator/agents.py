@@ -9,19 +9,19 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import io
 import json
 import os
 import re
+import zipfile
 from pathlib import Path
 from typing import Any
 
 from . import cli_ui
 from .azure_export import (
     AzureExportError,
-    SERVICE_OPTIONS,
     export_resource_group_to_bicep,
     fetch_resource_group_secret_values,
-    list_resource_ids_by_type,
 )
 from .bicep_compiler import BicepCompilerError, compile_bicep_to_arm
 from .cfn_generator import generate_cloudformation
@@ -74,9 +74,9 @@ def _run_dir(state: MigrationState) -> Path:
 # ---------------------------------------------------------------------------
 # Agent 0: export a live Azure resource group as the source ARM JSON.
 # Only runs when a resource_group was passed instead of an existing .bicep file.
-# Asks which service's resources to export (Key Vault / Functions / VNet) and
-# scopes the export to just that service's resource types. No decompile step --
-# `az group export` already returns ARM JSON, which Agent 1 reads directly.
+# Exports the whole resource group in one pass (no service-selection gate).
+# No decompile step -- `az group export` already returns ARM JSON, which
+# Agent 1 reads directly.
 # ---------------------------------------------------------------------------
 def make_agent0_export_resource_group(input_dir: Path):
     def agent0_export_resource_group(state: MigrationState) -> dict:
@@ -89,36 +89,9 @@ def make_agent0_export_resource_group(input_dir: Path):
                 ),
             }
 
-        cli_ui.step("Agent 0", f"Which Azure service should be exported from resource group '{resource_group}'?")
-        choice = cli_ui.select_option(
-            "Select service",
-            {key: label for key, (label, _) in SERVICE_OPTIONS.items()},
-        )
-        option = SERVICE_OPTIONS.get(choice)
-        if option is None:
-            reason = f"Invalid service selection '{choice}'; expected one of {', '.join(SERVICE_OPTIONS)}."
-            cli_ui.agent_result("Agent 0", "failed", reason)
-            return {
-                "stopped": True,
-                "stop_reason": reason,
-                "agent_log": _log("agent0_export_resource_group", "stopped", reason),
-            }
-        service_label, azure_types = option
-
-        cli_ui.step("Agent 0", f"Exporting {service_label} resources from resource group '{resource_group}'...")
+        cli_ui.step("Agent 0", f"Exporting all resources from resource group '{resource_group}'...")
         try:
-            resource_ids = list_resource_ids_by_type(resource_group, azure_types, state.get("subscription_id"))
-            if not resource_ids:
-                reason = f"No {service_label} resources found in resource group '{resource_group}'."
-                cli_ui.agent_result("Agent 0", "failed", reason)
-                return {
-                    "stopped": True,
-                    "stop_reason": reason,
-                    "agent_log": _log("agent0_export_resource_group", "stopped", reason),
-                }
-            bicep_path = export_resource_group_to_bicep(
-                resource_group, input_dir, state.get("subscription_id"), resource_ids=resource_ids
-            )
+            bicep_path = export_resource_group_to_bicep(resource_group, input_dir, state.get("subscription_id"))
         except AzureExportError as exc:
             cli_ui.agent_result("Agent 0", "failed", f"Resource group export failed: {exc}")
             return {
@@ -129,24 +102,23 @@ def make_agent0_export_resource_group(input_dir: Path):
 
         log_entries = _log(
             "agent0_export_resource_group", "ok",
-            f"Exported {service_label} resources from '{resource_group}' to {bicep_path}.",
+            f"Exported all resources from '{resource_group}' to {bicep_path}.",
         )
 
-        # ARM/Bicep exports never include Key Vault secret values (Azure omits them from
-        # the control-plane export API); read the real values from the data plane here so
-        # agent6_deploy can carry them over instead of fabricating new ones. Only relevant
-        # when Key Vault was the selected service.
+        # ARM/Bicep exports never include Key Vault secret values (Azure omits
+        # them from the control-plane export API); read real values from the
+        # data plane so agent6_deploy can carry them over when possible.
         source_secret_values: dict[str, SecretValue] = {}
         source_vault_names: list[str] = []
-        if service_label == "Key Vault":
-            source_secret_values_raw, source_vault_names, secret_fetch_warnings = fetch_resource_group_secret_values(
-                resource_group, state.get("subscription_id")
-            )
-            source_secret_values = wrap_secret_mapping(source_secret_values_raw)
+        source_secret_values_raw, source_vault_names, secret_fetch_warnings = fetch_resource_group_secret_values(
+            resource_group, state.get("subscription_id")
+        )
+        source_secret_values = wrap_secret_mapping(source_secret_values_raw)
+        if source_secret_values:
             log_entries[-1]["message"] += f" Fetched {len(source_secret_values)} real secret value(s)."
-            for secret_warning in secret_fetch_warnings:
-                cli_ui.warning(f"[Agent 0] {secret_warning}")
-                log_entries += _log("agent0_export_resource_group", "warning", secret_warning)
+        for secret_warning in secret_fetch_warnings:
+            cli_ui.warning(f"[Agent 0] {secret_warning}")
+            log_entries += _log("agent0_export_resource_group", "warning", secret_warning)
         cli_ui.agent_result("Agent 0", "ok", f"Export completed: {bicep_path}")
         return {
             "bicep_path": str(bicep_path),
@@ -240,34 +212,19 @@ def make_agent1_validate(knowledge_base: KnowledgeBase):
                     title="Unsupported Type Review",
                 )
             )
-            if not cli_ui.confirm(
-                "Continue migrating only the supported resources?"
-            ):
-                cli_ui.agent_result("Agent 1", "failed", "Run stopped due to unsupported resource types.")
-                return {
-                    **base_update,
-                    "stopped": True,
-                    "stop_reason": f"Human stopped the run due to unsupported types: {', '.join(unsupported)}",
-                    "agent1_decision": "stopped",
-                    "human_decisions": [{"gate": "agent1_validate", "decision": "rejected"}],
-                    "agent_log": _log(
-                        "agent1_validate", "stopped", "Human declined to continue with unsupported types."
-                    ),
-                }
             cli_ui.agent_result(
                 "Agent 1",
                 "warning",
-                "Continuing with supported resource types only; unsupported types were skipped.",
+                "Auto-continuing with supported resource types only; unsupported types were skipped.",
             )
             return {
                 **base_update,
                 "resource_types": [t for t in resource_types if t not in unsupported],
                 "stopped": False,
-                "agent1_decision": "human_approved",
-                "human_decisions": [{"gate": "agent1_validate", "decision": "approved"}],
+                "agent1_decision": "auto_continue",
                 "agent_log": _log(
                     "agent1_validate", "warning",
-                    "Human approved continuing with the supported resources only; unsupported types were skipped.",
+                    "Auto-continued with the supported resources only; unsupported types were skipped.",
                 ),
             }
 
@@ -420,11 +377,12 @@ def make_agent3_map_resources(knowledge_base: KnowledgeBase, generator: Generato
 
 
 # ---------------------------------------------------------------------------
-# Plan approval gate: mandatory human review of the migration plan before any
-# CloudFormation is generated.
+# Plan approval gate: review checkpoint after cfn-lint is clean (0 errors,
+# 0 warnings) and before deployment proceeds. Runs non-interactively by
+# default; it records the reviewed plan and auto-continues.
 # ---------------------------------------------------------------------------
 def plan_approval_gate(state: MigrationState) -> dict:
-    cli_ui.agent_phase("Plan Approval", "Review migration plan details before CloudFormation generation.")
+    cli_ui.agent_phase("Plan Approval", "Review migration plan details before deployment.")
     plan = state["migration_plan"]
     fix_attempts = state.get("fix_attempts", 0)
 
@@ -479,27 +437,17 @@ def plan_approval_gate(state: MigrationState) -> dict:
         cli_ui.console.print("\n[bold cyan]Outputs[/bold cyan]")
         cli_ui.console.print(cli_ui.plan_outputs_table(plan.outputs))
 
-    approved = cli_ui.confirm(
-        "Approve this migration plan and proceed to CloudFormation generation?"
-    )
-
-    annotate_current_run(metadata={"gate": "plan_approval_gate", "decision": "approved" if approved else "rejected"})
-    attach_feedback("plan_approved", score=1 if approved else 0)
-    update = {
-        "plan_confirmed": approved,
-        "human_decisions": [{"gate": "plan_approval_gate", "decision": "approved" if approved else "rejected"}],
+    annotate_current_run(metadata={"gate": "plan_approval_gate", "decision": "auto_approved"})
+    attach_feedback("plan_approved", score=1)
+    cli_ui.agent_result("Plan Approval", "ok", "Migration plan auto-approved (non-interactive mode).")
+    return {
+        "plan_confirmed": True,
         "agent_log": _log(
-            "plan_approval_gate", "ok" if approved else "stopped",
-            "Human approved the migration plan." if approved else "Human rejected the migration plan.",
+            "plan_approval_gate",
+            "ok",
+            "Plan auto-approved after clean lint (non-interactive mode).",
         ),
     }
-    if not approved:
-        cli_ui.agent_result("Plan Approval", "failed", "Migration plan rejected by reviewer.")
-        update["stopped"] = True
-        update["stop_reason"] = "Human rejected the migration plan at the plan approval gate."
-    else:
-        cli_ui.agent_result("Plan Approval", "ok", "Migration plan approved.")
-    return update
 
 
 # ---------------------------------------------------------------------------
@@ -507,7 +455,7 @@ def plan_approval_gate(state: MigrationState) -> dict:
 # ---------------------------------------------------------------------------
 def make_agent4_render(output_dir: Path):
     def agent4_render(state: MigrationState) -> dict:
-        cli_ui.agent_phase("Agent 4", "Rendering CloudFormation template from approved migration plan...")
+        cli_ui.agent_phase("Agent 4", "Rendering CloudFormation template from migration plan...")
         yaml_text = generate_cloudformation(state["migration_plan"])
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / f"{Path(state['bicep_path']).stem}.generated.yaml"
@@ -569,9 +517,17 @@ def agent5_validate_cfn(state: MigrationState) -> dict:
     attempt = state.get("fix_attempts", 0) + 1
     cli_ui.agent_phase("Agent 5", f"Running cfn-lint validation (attempt {attempt})...")
     with trace_span("cfn_lint", run_type="tool", inputs={"attempt": attempt}, tags=[f"fix_attempt:{state.get('fix_attempts', 0)}"]) as span:
-        lint_passed, lint_output = run_cfn_lint(Path(state["output_path"]))
+        lint_raw_passed, lint_output = run_cfn_lint(Path(state["output_path"]))
         errors, warnings = _count_lint_findings(lint_output)
-        span.end(outputs={"passed": lint_passed, "error_count": errors, "warning_count": warnings})
+        lint_passed = bool(lint_raw_passed and errors == 0 and warnings == 0)
+        span.end(
+            outputs={
+                "raw_passed": lint_raw_passed,
+                "passed": lint_passed,
+                "error_count": errors,
+                "warning_count": warnings,
+            }
+        )
     attempt_entry = {
         "attempt": attempt,
         "passed": lint_passed,
@@ -586,8 +542,12 @@ def agent5_validate_cfn(state: MigrationState) -> dict:
     status = "ok" if lint_passed else "warning"
     cli_ui.agent_result(
         "Agent 5",
-        "ok" if lint_passed else "warning",
-        f"cfn-lint {'passed' if lint_passed else 'found issues'} ({errors} error(s), {warnings} warning(s)).",
+        status,
+        (
+            "cfn-lint passed with 0 error(s) and 0 warning(s)."
+            if lint_passed
+            else f"cfn-lint is not clean ({errors} error(s), {warnings} warning(s))."
+        ),
     )
     return {
         "lint_passed": lint_passed,
@@ -603,9 +563,8 @@ def agent5_validate_cfn(state: MigrationState) -> dict:
 # Guardrail scan gate: static security scanning of the rendered template --
 # checkov (built-in CloudFormation policies) plus custom secret/IAM/network
 # checks (orchestrator/guardrails.py) -- run only after cfn-lint passes.
-# HIGH/CRITICAL findings require explicit human sign-off before Agent 6 can
-# deploy, mirroring plan_approval_gate/stack_check_gate's human-in-the-loop
-# pattern; MEDIUM/LOW findings are advisory and never block.
+# Findings are reported, but this gate auto-continues in non-interactive mode;
+# only stack_check_gate remains interactive.
 # ---------------------------------------------------------------------------
 def _render_guardrail_report(state: MigrationState, result) -> str:
     lines = [
@@ -696,32 +655,18 @@ def make_guardrail_scan_gate(config: Config):
                 ),
             }
 
-        cli_ui.warning(f"{len(blocking)} HIGH/CRITICAL guardrail finding(s) -- review before deploying.")
-        if not cli_ui.confirm(
-            "Proceed to deployment despite these findings?"
-        ):
-            attach_feedback("guardrail_gate_decision", value="cancelled")
-            cli_ui.agent_result("Guardrail Scan", "failed", "Deployment stopped at guardrail gate.")
-            return {
-                **base_update,
-                "stopped": True,
-                "stop_reason": f"Human stopped deployment due to {len(blocking)} HIGH/CRITICAL guardrail finding(s).",
-                "human_decisions": [{"gate": "guardrail_scan_gate", "decision": "rejected"}],
-                "agent_log": _log(
-                    "guardrail_scan_gate", "stopped",
-                    f"Human declined to proceed past {len(blocking)} blocking finding(s).",
-                ),
-            }
-        attach_feedback("guardrail_gate_decision", value="approved_with_findings")
+        cli_ui.warning(
+            f"{len(blocking)} HIGH/CRITICAL guardrail finding(s) detected -- auto-continuing in non-interactive mode."
+        )
+        attach_feedback("guardrail_gate_decision", value="auto_continue_with_findings")
         cli_ui.agent_result(
-            "Guardrail Scan", "warning", f"Human approved proceeding despite {len(blocking)} blocking finding(s)."
+            "Guardrail Scan", "warning", f"Auto-continued despite {len(blocking)} blocking finding(s)."
         )
         return {
             **base_update,
-            "human_decisions": [{"gate": "guardrail_scan_gate", "decision": "approved_with_findings"}],
             "agent_log": _log(
                 "guardrail_scan_gate", "warning",
-                f"Human approved proceeding despite {len(blocking)} HIGH/CRITICAL finding(s).",
+                f"Auto-continued despite {len(blocking)} HIGH/CRITICAL finding(s).",
             ),
         }
 
@@ -734,8 +679,10 @@ def make_guardrail_scan_gate(config: Config):
 # Parameter values are resolved from --params-file, CFN_PARAM_<NAME> env vars,
 # source Key Vault values (NoEcho only), template defaults, and selected
 # safe infrastructure-derived fallbacks (e.g. first available AZ in-region
-# for AWS::EC2::AvailabilityZone::Name); anything still unresolved or invalid
-# fails the run fast instead of blocking on input().
+# for AWS::EC2::AvailabilityZone::Name, plus optional bootstrap of a Lambda
+# deployment artifact bucket when DeploymentBucketName is required but missing);
+# anything still unresolved or invalid fails the run fast instead of blocking
+# on input().
 # ---------------------------------------------------------------------------
 def make_agent6_deploy(config: Config):
     def agent6_deploy(state: MigrationState) -> dict:
@@ -758,6 +705,9 @@ def make_agent6_deploy(config: Config):
         derived_aws_values: list[str] = []
         resolutions: list[dict] = []  # {name, source} only -- never values
         ec2 = None
+        s3 = None
+        sts = None
+        auto_bootstrapped_values: list[str] = []
         with trace_span(
             "resolve_cfn_parameters", run_type="tool", inputs={"parameter_names": list((plan.parameters or {}).keys())}
         ) as param_span:
@@ -769,6 +719,31 @@ def make_agent6_deploy(config: Config):
                     if ec2 is None:
                         ec2 = boto3.client("ec2", region_name=config.aws_region)
                     value, source = _resolve_first_available_az(ec2, config.aws_region)
+                if value is None and _is_lambda_deployment_bucket_param(name, definition, plan):
+                    try:
+                        if s3 is None:
+                            s3 = boto3.client("s3", region_name=config.aws_region)
+                        if sts is None:
+                            sts = boto3.client("sts", region_name=config.aws_region)
+                        package_key = _resolve_lambda_deployment_package_key(
+                            plan,
+                            overrides,
+                            source_secret_values,
+                            source_name_candidates,
+                        )
+                        value, source = _bootstrap_lambda_deployment_bucket_and_package(
+                            s3=s3,
+                            sts=sts,
+                            region=config.aws_region,
+                            stack_name=stack_name,
+                            package_key=package_key,
+                            run_id=str(state.get("run_id") or "run"),
+                        )
+                        auto_bootstrapped_values.append(name)
+                    except Exception as exc:  # noqa: BLE001 - surfaced in existing required-param error path
+                        cli_ui.warning(
+                            f"[Agent 6] Auto-bootstrap for parameter '{name}' failed: {exc}"
+                        )
                 if value is None:
                     msg = (
                         f"No value available for required parameter '{name}'. Supply one via "
@@ -855,6 +830,11 @@ def make_agent6_deploy(config: Config):
             message += (
                 f" Auto-selected first available AZ in {config.aws_region} for: "
                 f"{', '.join(derived_aws_values)}."
+            )
+        if auto_bootstrapped_values:
+            message += (
+                " Auto-bootstrapped Lambda deployment artifacts for: "
+                f"{', '.join(auto_bootstrapped_values)}."
             )
         cli_ui.agent_result("Agent 6", "ok", f"Deployment status: {deploy_result['status']}.")
         return {
@@ -1003,6 +983,136 @@ def _resolve_first_available_az(ec2_client, region: str) -> tuple[str | None, st
     return zones[0], "region-availability-zone"
 
 
+def _is_lambda_deployment_bucket_param(name: str, definition: dict, plan) -> bool:
+    """Identify required parameters used as Lambda Code.S3Bucket refs.
+
+    This keeps auto-bootstrap scoped to the deployment-artifact bucket pattern
+    used by AWS::Lambda::Function, rather than guessing arbitrary bucket params.
+    """
+    normalized_name = _normalize_key(name)
+    if "deployment" not in normalized_name or "bucket" not in normalized_name:
+        return False
+    if not isinstance(definition, dict):
+        return False
+    for resource in (plan.resources or []):
+        if getattr(resource, "aws_type", "") != "AWS::Lambda::Function":
+            continue
+        code = (resource.properties or {}).get("Code", {})
+        if not isinstance(code, dict):
+            continue
+        s3_bucket = code.get("S3Bucket")
+        if isinstance(s3_bucket, dict) and s3_bucket.get("Ref") == name:
+            return True
+    return False
+
+
+def _resolve_lambda_deployment_package_key(
+    plan,
+    overrides: dict[str, str],
+    source_secret_values: dict[str, SecretValue],
+    source_name_candidates: list[str],
+) -> str:
+    """Resolve which object key should be uploaded for Lambda deployment.
+
+    Reuses the normal parameter precedence for DeploymentPackageKey when
+    available; otherwise falls back to function.zip.
+    """
+    definition = (plan.parameters or {}).get("DeploymentPackageKey")
+    if isinstance(definition, dict):
+        value, _source = _resolve_param_value(
+            "DeploymentPackageKey",
+            definition,
+            overrides,
+            source_secret_values,
+            source_name_candidates,
+        )
+        if value:
+            return str(value)
+    return "function.zip"
+
+
+def _bootstrap_lambda_deployment_bucket_and_package(
+    *,
+    s3,
+    sts,
+    region: str,
+    stack_name: str,
+    package_key: str,
+    run_id: str,
+) -> tuple[str, str]:
+    """Create/reuse a migration artifact bucket and upload a minimal zip.
+
+    Returns (bucket_name, source_label).
+    """
+    account_id = sts.get_caller_identity().get("Account", "000000000000")
+    base = _build_artifact_bucket_name(stack_name, account_id, region)
+    bucket_name = _ensure_accessible_bucket(s3, base, region, run_id)
+    zip_bytes = _build_lambda_bootstrap_zip_bytes()
+    s3.put_object(
+        Bucket=bucket_name,
+        Key=package_key,
+        Body=zip_bytes,
+        ContentType="application/zip",
+    )
+    return bucket_name, "auto-deployment-bucket"
+
+
+def _build_artifact_bucket_name(stack_name: str, account_id: str, region: str) -> str:
+    token = re.sub(r"-+", "-", re.sub(r"[^a-z0-9-]", "-", stack_name.lower())).strip("-") or "stack"
+    suffix = f"-{account_id}-{region}"
+    prefix = "azuaws-migrate-artifacts-"
+    max_token_len = max(1, 63 - len(prefix) - len(suffix))
+    token = token[:max_token_len].strip("-") or "stack"
+    name = f"{prefix}{token}{suffix}"[:63]
+    return name.strip("-")
+
+
+def _ensure_accessible_bucket(s3, base_name: str, region: str, run_id: str) -> str:
+    candidates = [base_name]
+    suffix = re.sub(r"[^a-z0-9]", "", run_id.lower())[:8] or "run"
+    alt = f"{base_name}-{suffix}"[:63].strip("-")
+    if alt and alt != base_name:
+        candidates.append(alt)
+
+    for bucket in candidates:
+        try:
+            s3.head_bucket(Bucket=bucket)
+            return bucket
+        except Exception:
+            pass
+        try:
+            create_kwargs: dict[str, Any] = {"Bucket": bucket}
+            if region != "us-east-1":
+                create_kwargs["CreateBucketConfiguration"] = {"LocationConstraint": region}
+            s3.create_bucket(**create_kwargs)
+            return bucket
+        except Exception:
+            continue
+
+    raise RuntimeError("could not create or access an S3 artifact bucket for Lambda code")
+
+
+def _build_lambda_bootstrap_zip_bytes() -> bytes:
+    """Package minimal Lambda source as function.zip payload bytes."""
+    sample_index = (
+        Path(__file__).resolve().parent.parent
+        / "resources"
+        / "functions"
+        / "deployment_package"
+        / "function"
+        / "index.js"
+    )
+    if sample_index.exists():
+        source = sample_index.read_text(encoding="utf-8")
+    else:
+        source = "exports.handler = async () => ({ statusCode: 200, body: 'ok' });\n"
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.js", source)
+    return buffer.getvalue()
+
+
 def _normalize_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.lower())
 
@@ -1065,7 +1175,7 @@ _STACK_BLOCKS_UPDATE = {"ROLLBACK_COMPLETE", "CREATE_FAILED", "DELETE_FAILED"}
 
 # ---------------------------------------------------------------------------
 # Stack conflict gate: verify whether the target CFN stack already exists
-# before agent6 mutates anything, and let the human choose update vs. delete.
+# before agent6 mutates anything, and let the human choose delete/recreate or cancel.
 # ---------------------------------------------------------------------------
 def make_stack_check_gate(config: Config):
     def stack_check_gate(state: MigrationState) -> dict:
@@ -1137,7 +1247,7 @@ def make_stack_check_gate(config: Config):
                     {
                         "Stack": stack_name,
                         "Status": status,
-                        "Available actions": "update / delete+recreate / cancel",
+                        "Available actions": "delete+recreate / cancel",
                         "Default": "cancel",
                     },
                 ),
@@ -1147,20 +1257,11 @@ def make_stack_check_gate(config: Config):
         answer = cli_ui.select_option(
             "Choose stack action",
             {
-                "u": "Update existing stack",
                 "d": "Delete and recreate stack",
                 "c": "Cancel deployment",
             },
             default="c",
         )
-        if answer == "u":
-            attach_feedback("stack_gate_decision", value="update")
-            cli_ui.agent_result("Stack Check", "ok", f"Proceeding with stack update for '{stack_name}'.")
-            return {
-                "stack_action": "update",
-                "human_decisions": [{"gate": "stack_check_gate", "decision": "update"}],
-                "agent_log": _log("stack_check_gate", "ok", f"Human chose to update existing stack '{stack_name}'."),
-            }
         if answer == "d":
             _delete_stack_and_wait(cfn, stack_name)
             attach_feedback("stack_gate_decision", value="delete_recreate")

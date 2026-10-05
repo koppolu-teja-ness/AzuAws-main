@@ -178,7 +178,7 @@ def test_retrieval_quality_good_fallback_contaminated_and_error():
 
 def test_trajectory_valid_legal_and_illegal_paths():
     evaluator = build_trajectory_valid(max_fix_attempts=2)
-    legal = evaluator({"node_path": ["agent1_validate", "agent2_build_cnr", "agent3_map_resources", "plan_approval_gate", "agent4_render", "agent5_validate_cfn"], "fix_attempts": 0})
+    legal = evaluator({"node_path": ["agent1_validate", "agent2_build_cnr", "agent3_map_resources", "agent4_render", "agent5_validate_cfn", "plan_approval_gate"], "fix_attempts": 0})
     assert legal["score"] == 1.0
 
     deploy_leak = evaluator({"node_path": ["agent1_validate", "agent6_deploy"], "fix_attempts": 0})

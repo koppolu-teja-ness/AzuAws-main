@@ -28,9 +28,8 @@ class MigrationState(TypedDict, total=False):
     started_at: float  # time.time() when the run began -- used for time-to-migrate
 
     # Human-in-the-loop decisions, one entry per interactive gate that actually
-    # prompted (not every gate always prompts -- e.g. guardrail/stack gates only
-    # prompt when there's something to decide). Used by evaluation.py's
-    # human-intervention-rate metric.
+    # prompted (by default this is stack_check_gate only). Used by
+    # evaluation.py's human-intervention-rate metric.
     human_decisions: Annotated[list[dict], operator.add]
 
     # Agent 0: export an Azure resource group as the source .bicep (optional;
@@ -61,7 +60,7 @@ class MigrationState(TypedDict, total=False):
     migration_plan: Any  # orchestrator.migration_plan.MigrationPlan
     mapping_table: list[dict]  # [{logical_id, source_azure_type, aws_type}]
 
-    # Plan approval gate: mandatory human sign-off before CFN generation
+    # Plan approval gate: checkpoint after clean lint and before deployment gates
     plan_confirmed: bool
 
     # Agent 4: render
@@ -78,14 +77,14 @@ class MigrationState(TypedDict, total=False):
     max_fix_attempts: int
 
     # Guardrail scan gate: checkov + custom secret/IAM/network checks on the
-    # rendered template, gated on human approval when HIGH/CRITICAL findings exist.
+    # rendered template; findings are logged and deployment auto-continues.
     guardrail_findings: list[dict]  # dataclasses.asdict(Finding) -- see orchestrator/guardrails.py
     guardrail_report_path: str
 
     # Stack conflict gate + Agent 6/Verify: deploy + post-deploy smoke checks
     param_overrides: dict[str, str]  # CFN parameter values from --params-file / CLI
     param_values: dict[str, str | SecretValue]  # fully resolved/validated values used for deploy
-    stack_action: str  # "create" | "update" (decided by stack_check_gate)
+    stack_action: str  # normally "create" from stack_check_gate; may be "update" only via Agent 6 fallback
     deploy_result: dict
     verify_result: dict  # {secrets_checked, vpc_reachability, lambda_invocations}
 

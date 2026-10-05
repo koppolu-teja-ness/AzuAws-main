@@ -4,40 +4,34 @@ Graph shape:
 
     agent0_export_resource_group --> agent1_validate --stop--> agent7_report --> END
                     --continue--> agent2_build_cnr --> agent3_map_resources
-                    --> plan_approval_gate
-                        --rejected--> agent7_report --> END
-                        --approved--> agent4_render --> agent5_validate_cfn
-                            --retry (lint fail, attempts left)--> agent3_map_resources
-                            --give up (lint fail, attempts exhausted)--> agent7_report --> END
-                            --pass--> guardrail_scan_gate
-                                        --HIGH/CRITICAL findings, human declines--> agent7_report --> END
-                                        --clean/approved--> stack_check_gate
+                    --> agent4_render --> agent5_validate_cfn
+                            --retry (lint not clean, attempts left)--> agent3_map_resources
+                            --give up (lint not clean, attempts exhausted)--> agent7_report --> END
+                            --clean--> plan_approval_gate
+                --continue--> guardrail_scan_gate
+                    --continue--> stack_check_gate
                                         --cancelled/blocked--> agent7_report --> END
                                         --ok--> agent6_deploy --> agent6_verify --> agent7_report --> END
 
 Agents 1, 2, 4, 5 are deterministic wrappers around existing orchestrator
-modules; only agent3 (mapping) calls the LLM. plan_approval_gate is a
-mandatory human sign-off on the migration plan before any CloudFormation is
-generated. Deployment itself has no interactive parameter-value prompt --
-agent6_deploy resolves parameter values from --params-file,
+modules; only agent3 (mapping) calls the LLM. plan_approval_gate runs after
+cfn-lint is fully clean (0 errors, 0 warnings) and auto-continues in
+non-interactive mode. Deployment itself has no interactive parameter-value
+prompt -- agent6_deploy resolves parameter values from --params-file,
 CFN_PARAM_<NAME> env vars, a matching real value fetched from the source Key
 Vault (secrets only, resource-group export flow), or template Defaults,
 failing fast if none apply. guardrail_scan_gate runs between cfn-lint passing
 and stack_check_gate: checkov plus custom secret/IAM/network checks
-(orchestrator/guardrails.py) scan the rendered template, and any HIGH/CRITICAL
-finding requires explicit human sign-off before deployment can continue --
-the second interactive checkpoint, alongside stack_check_gate below.
+(orchestrator/guardrails.py) scan the rendered template and report findings,
+then auto-continue in non-interactive mode.
 stack_check_gate looks
 up the target CFN stack right before deployment and, if it already exists,
-asks the human to update it in place or delete-and-recreate it
+asks the human to delete-and-recreate it or cancel deployment
 (auto-detecting unrecoverable states like ROLLBACK_COMPLETE that
-CloudFormation refuses to update) -- the third and final interactive
-checkpoint, left in place intentionally.
+CloudFormation refuses to update) -- the only interactive checkpoint.
 agent0_export_resource_group is a no-op (passthrough) unless the CLI was
-invoked with --resource-group, in which case it first asks which service to
-export (Key Vault / Functions / VNet -- see azure_export.SERVICE_OPTIONS),
-then exports only that service's resources from the live resource group to a
-.bicep file under the input directory before Agent 1 runs.
+invoked with --resource-group, in which case it exports the full live resource
+group to an ARM JSON file under the input directory before Agent 1 runs.
 """
 from __future__ import annotations
 
@@ -79,7 +73,7 @@ def _route_after_validate(state: MigrationState) -> str:
 
 def _route_after_lint(state: MigrationState) -> str:
     if state.get("lint_passed"):
-        return "guardrail_scan"
+        return "plan_gate"
     if state.get("fix_attempts", 0) < state.get("max_fix_attempts", 2):
         return "retry"
     return "report"
@@ -90,7 +84,7 @@ def _route_after_guardrail_gate(state: MigrationState) -> str:
 
 
 def _route_after_plan_gate(state: MigrationState) -> str:
-    return "render" if state.get("plan_confirmed") else "report"
+    return "guardrail_scan" if state.get("plan_confirmed") else "report"
 
 
 def _route_after_stack_check(state: MigrationState) -> str:
@@ -103,7 +97,7 @@ def _bump_fix_attempts(state: MigrationState) -> dict:
 
 def _lint_give_up(state: MigrationState) -> dict:
     attempts = state.get("fix_attempts", 0) + 1
-    reason = f"cfn-lint still failing after {attempts} attempt(s); stopping before deployment."
+    reason = f"cfn-lint not clean after {attempts} attempt(s); stopping before deployment."
     return {
         "stopped": True,
         "stop_reason": reason,
@@ -145,15 +139,15 @@ def build_graph(
         "agent1_validate", _route_after_validate, {"report": "agent7_report", "continue": "agent2_build_cnr"}
     )
     graph.add_edge("agent2_build_cnr", "agent3_map_resources")
-    graph.add_edge("agent3_map_resources", "plan_approval_gate")
-    graph.add_conditional_edges(
-        "plan_approval_gate", _route_after_plan_gate, {"render": "agent4_render", "report": "agent7_report"}
-    )
+    graph.add_edge("agent3_map_resources", "agent4_render")
     graph.add_edge("agent4_render", "agent5_validate_cfn")
     graph.add_conditional_edges(
         "agent5_validate_cfn",
         _route_after_lint,
-        {"retry": "bump_fix_attempts", "guardrail_scan": "guardrail_scan_gate", "report": "lint_give_up"},
+        {"retry": "bump_fix_attempts", "plan_gate": "plan_approval_gate", "report": "lint_give_up"},
+    )
+    graph.add_conditional_edges(
+        "plan_approval_gate", _route_after_plan_gate, {"guardrail_scan": "guardrail_scan_gate", "report": "agent7_report"}
     )
     graph.add_edge("bump_fix_attempts", "agent3_map_resources")
     graph.add_edge("lint_give_up", "agent7_report")

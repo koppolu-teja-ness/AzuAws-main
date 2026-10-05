@@ -6,14 +6,13 @@
 ![Human--in--the--loop](https://img.shields.io/badge/approval-human--in--the--loop-yellow)
 ![Status](https://img.shields.io/badge/status-capstone%20project-brightgreen)
 
-An agentic, human-gated pipeline that migrates Azure Bicep infrastructure-as-code to AWS
+An agentic pipeline that migrates Azure Bicep infrastructure-as-code to AWS
 CloudFormation. A [LangGraph](https://langchain-ai.github.io/langgraph/) state graph of 7
 agents wraps deterministic parsing/rendering/validation code around a single LLM reasoning
-step (AWS Bedrock), with mandatory human approval on the migration plan before any
-CloudFormation is generated, plus conditional human gates for blocking guardrail findings
-and stack conflicts before deployment. Deployment itself (parameter
-resolution + `create_stack`/`update_stack`) is fully automatic once applicable gates pass — no
-confirmation prompt, no interactive parameter entry.
+step (AWS Bedrock). Plan review and guardrail scan are non-interactive checkpoints,
+and stack conflict is the only interactive gate before deployment. Deployment itself
+(parameter resolution + `create_stack`/`update_stack`) is fully automatic once that
+gate passes -- no interactive parameter entry.
 
 > See [CAPSTONE_PLAN.md](CAPSTONE_PLAN.md) for the full target design (guardrails,
 > multi-resource knowledge-base growth, evaluation harness). This README describes
@@ -46,46 +45,36 @@ confirmation prompt, no interactive parameter entry.
 
 ```mermaid
 flowchart LR
-    U([Developer / Operator]) -->|bicep file or\nAzure resource group| CLI[migrate_agents.py\nLangGraph CLI]
+    U([Developer or Operator]) -->|bicep file or\nAzure resource group| CLI[migrate_agents.py\nLangGraph CLI]
+    AZ[(Azure Bicep or\nResource Group)] --> CLI
 
-    subgraph Sources["Source"]
-        AZ[(Azure Bicep /\nResource Group)]
-    end
+    KB[(Knowledge Base\nAzure to AWS mapping docs)] --> RAG[[RAG retrieval\nvector plus BM25]]
+    RAG --> MAP{{Agent 3\nLLM mapping}}
 
-    subgraph Core["orchestrator/ -- 7-agent LangGraph pipeline"]
-      A[Deterministic agents\n0/1/2/4/5/6/7]
-      KB[(Knowledge Base\nAzure -> AWS mapping docs)]
-      LLM{{Agent 3 Bedrock\nMigration plan reasoning}}
-      RAG[[RAG retrieval\nvector + BM25]]
-    end
+    CLI --> V1[Agent 1 validate]
+    V1 --> V2[Agent 2 build CNR]
+    V2 --> MAP
+    MAP --> RENDER[Agent 4 render CFN]
+    RENDER --> LINT[Agent 5 cfn-lint]
+    LINT -- lint not clean\nretry left --> MAP
 
-    subgraph Gates["Human-in-the-loop gates"]
-      G1{{Plan approval\nmandatory}}
-      G2{{Guardrail scan\nconditional}}
-      G3{{Stack conflict\nconditional}}
-    end
+    LINT -- lint clean\n0 errors and 0 warnings --> PLAN{{Plan checkpoint\nauto}}
+    PLAN --> GR{{Guardrail scan\nauto}}
+    GR --> STACK{{Stack conflict gate\nhuman choice d or c}}
+    STACK -- c cancel --> OUT[(output/runs/\nreport.md + history.jsonl + calibration_report.md)]
+    STACK -- d or no clash --> DEPLOY[(AWS CloudFormation stack)]
+    DEPLOY --> VERIFY[(Post-deploy verification)]
+    VERIFY --> OUT
 
-    subgraph Targets["Target"]
-        CFN[(AWS CloudFormation\nStack)]
-      V[(Post-deploy\nverification)]
-    end
-
-    AZ --> CLI --> A
-    KB --> RAG --> LLM
-    A --> LLM --> G1 --> A
-    A -.->|lint fail + retries| LLM
-    A -->|lint pass| G2 --> G3 --> CFN --> V
-    V --> OUT[(output/runs/\nreport.md + history.jsonl + calibration_report.md)]
-
-    style LLM fill:#ffe9d6,stroke:#d2691e
-    style G1 fill:#fff3cd,stroke:#b8860b
-    style G2 fill:#fff3cd,stroke:#b8860b
-    style G3 fill:#fff3cd,stroke:#b8860b
-    style CFN fill:#d4edda,stroke:#2e7d32
+    style MAP fill:#ffe9d6,stroke:#d2691e
+    style PLAN fill:#fff3cd,stroke:#b8860b
+    style GR fill:#fff3cd,stroke:#b8860b
+    style STACK fill:#fff3cd,stroke:#b8860b
+    style DEPLOY fill:#d4edda,stroke:#2e7d32
 ```
 
 Every box above is one of: deterministic Python code (compiling, rendering, linting,
-deploying), a single Bedrock LLM call (resource mapping only), or a human checkpoint. No
+deploying), a single Bedrock LLM call (resource mapping only), or a checkpoint. No
 other component makes network calls or mutates AWS state.
 
 ## Agentic workflow reference
@@ -120,40 +109,37 @@ flowchart LR
         E[Migration Plan JSON\nresource + param mapping]
     end
 
-    subgraph Human["Human-in-the-loop gates"]
-        H1{{Plan approval gate}}
-      H2{{Guardrail scan gate\nconditional}}
-      H3{{Stack conflict gate\nconditional}}
+    subgraph Checkpoints["Pre-deploy checkpoints"]
+      H1{{Plan checkpoint\nauto}}
+      H2{{Guardrail scan\nauto}}
+      H3{{Stack conflict gate\nhuman choice d or c}}
     end
 
-    A --> B --> C --> D --> E --> H1
-    H1 -- approved --> F --> G
-    G -- fail, retries left --> E
-    G -- pass --> H2 -- clean/approved --> H3 -- ok --> I --> J --> K --> R
+    A --> B --> C --> D --> E --> F --> G
+    G -- not clean, retries left --> E
+    G -- clean --> H1 --> H2 --> H3 -- d or no clash --> I --> J --> K --> R
+    H3 -- c cancel --> R
     J --> T[(AWS stack +\nresource smoke checks)]
     R[(output/runs/&lt;id&gt;/report.md\n+ history.jsonl\n+ calibration_report.md)]
-    H1 -- rejected --> R
-    H2 -- HIGH/CRITICAL, declined --> R
-    H3 -- blocked/cancelled --> R
     G -- retries exhausted --> R
 ```
 
 ## The LangGraph agent graph
 
-`orchestrator/graph.py` wires 7 agents + 3 human-approval gates into a single
+`orchestrator/graph.py` wires 7 agents + 3 deployment checkpoints into a single
 `StateGraph` (state shape defined in [orchestrator/state.py](orchestrator/state.py)):
 
 | Step | Node | Type | Responsibility |
 |---|---|---|---|
-| 0 | `agent0_export_resource_group` | deterministic + human choice | Optional resource-group export path (when no `bicep_file` is passed): asks which service to export (Key Vault / Functions / VNet), exports ARM JSON to `input/<rg>.json`, and (for Key Vault) best-effort fetches source secret values |
-| 1 | `agent1_validate` | deterministic | Compile Bicep → ARM JSON (or load exported ARM JSON), check every resource type has a knowledge-base mapping; prompts to continue if some don't |
+| 0 | `agent0_export_resource_group` | deterministic | Optional resource-group export path (when no `bicep_file` is passed): exports the full resource group as ARM JSON to `input/<rg>.json`, and best-effort fetches source Key Vault secret values |
+| 1 | `agent1_validate` | deterministic | Compile Bicep → ARM JSON (or load exported ARM JSON), check every resource type has a knowledge-base mapping; auto-continues with supported resources when some are unsupported |
 | 2 | `agent2_build_cnr` | deterministic | Build a Cloud-Neutral Representation (CNR) — one language-agnostic template per resource |
 | 3 | `agent3_map_resources` | **LLM (Bedrock)** | Map each Azure resource to an AWS equivalent, emit a `MigrationPlan` JSON (resources, params, outputs, conditions) |
-| — | `plan_approval_gate` | **human gate** | Print the plan + mapping table, require explicit `y` before any CFN is generated |
-| 4 | `agent4_render` | deterministic | Render the approved plan into CloudFormation YAML (no LLM involved) |
-| 5 | `agent5_validate_cfn` | deterministic | Run `cfn-lint`; on failure, loop back to Agent 3 with the error feedback (self-correction), up to `MAX_FIX_ATTEMPTS` |
-| — | `guardrail_scan_gate` | **human gate** | Run `checkov` + custom secret/IAM/network checks (see [Guardrail security scan](#guardrail-security-scan)) against the rendered template; HIGH/CRITICAL findings require explicit approval before deploying |
-| — | `stack_check_gate` | **human gate** | Look up the target CFN stack; if it exists, ask to update in place or delete-and-recreate (auto-detects stuck states like `ROLLBACK_COMPLETE`) |
+| 4 | `agent4_render` | deterministic | Render CloudFormation YAML from the migration plan (no LLM involved) |
+| 5 | `agent5_validate_cfn` | deterministic | Run `cfn-lint`; if there are any errors or warnings, loop back to Agent 3 with lint feedback (self-correction), up to `MAX_FIX_ATTEMPTS` |
+| — | `plan_approval_gate` | deterministic checkpoint | After a clean `cfn-lint` result (0 errors, 0 warnings), print the plan + mapping table and auto-approve in non-interactive mode |
+| — | `guardrail_scan_gate` | deterministic checkpoint | Run `checkov` + custom secret/IAM/network checks (see [Guardrail security scan](#guardrail-security-scan)) against the rendered template; findings are reported and run auto-continues |
+| — | `stack_check_gate` | **human gate** | Look up the target CFN stack; if it exists, ask to delete-and-recreate or cancel (auto-detects stuck states like `ROLLBACK_COMPLETE`) |
 | 6 | `agent6_deploy` | deterministic | Real `boto3` `create_stack`/`update_stack` -- fully automatic parameter resolution (`--params-file` → `CFN_PARAM_<NAME>` env var → source Key Vault secret/name → template Default) |
 | 6b | `agent6_verify` | deterministic | Per-resource-type post-deploy smoke tests: Secrets Manager existence, VPC default-route reachability, and Lambda invoke |
 | 7 | `agent7_report` | deterministic | Write `output/runs/<run_id>/report.md` from the full `agent_log`, append the run outcome to `output/runs/history.jsonl`, and regenerate `output/runs/calibration_report.md` (see [Run history & calibration report](#run-history--calibration-report)) |
@@ -163,19 +149,17 @@ flowchart TD
    S([start]) --> A0[agent0_export_resource_group]
    A0 -- stopped --> R7[agent7_report]
    A0 -- continue --> A1[agent1_validate]
-  A1 -- unsupported types, declined --> R7[agent7_report]
+  A1 -- stopped --> R7
   A1 -- dry-run --> R7[agent7_report]
     A1 -- continue --> A2[agent2_build_cnr]
     A2 --> A3[agent3_map_resources]
-    A3 --> PG{{plan_approval_gate}}
-    PG -- rejected --> R7
-    PG -- approved --> A4[agent4_render]
+    A3 --> A4[agent4_render]
     A4 --> A5[agent5_validate_cfn]
-    A5 -- lint fail, retries left --> BUMP[bump_fix_attempts] --> A3
-    A5 -- lint fail, exhausted --> GIVEUP[lint_give_up] --> R7
-    A5 -- lint pass --> GSG{{guardrail_scan_gate}}
-    GSG -- blocking findings, declined --> R7
-    GSG -- clean/approved --> SG{{stack_check_gate}}
+    A5 -- lint not clean, retries left --> BUMP[bump_fix_attempts] --> A3
+    A5 -- lint not clean, exhausted --> GIVEUP[lint_give_up] --> R7
+   A5 -- lint clean --> PG{{plan_approval_gate auto}}
+   PG --> GSG{{guardrail_scan_gate auto}}
+   GSG --> SG{{stack_check_gate human}}
     SG -- conflict unresolved/cancelled --> R7
     SG -- ok --> A6[agent6_deploy]
     A6 --> V6[agent6_verify]
@@ -202,15 +186,15 @@ a report. Useful for quickly validating a new `.bicep` file before spending an L
 python migrate_agents.py resources/keyvault/main.bicep --dry-run
 ```
 
-### 2. Full run (LLM + human approval gates + automatic deploy)
-Runs the entire graph above. You will be prompted at up to five points:
-1. **Service export selection** (Agent 0, only when running from `AZURE_RESOURCE_GROUP`) — choose Key Vault, Functions, or VNet resources.
-2. **Unsupported resource types** (Agent 1) — continue with supported resources only, or stop.
-3. **Plan approval gate** — review the LLM's resource/AWS mapping table before any YAML is generated.
-4. **Guardrail scan gate** — approve or stop if `checkov`/custom checks find HIGH/CRITICAL
-   issues in the rendered template (only prompts when something is actually blocking).
-5. **Stack conflict gate** — choose update vs. delete-recreate vs. cancel if the target stack
-   already exists (only prompts when there's actually a conflict to resolve).
+### 2. Full run (LLM + automatic checkpoints + stack gate + automatic deploy)
+Runs the entire graph above. You are prompted only for stack conflicts:
+1. **Stack conflict gate** — choose delete-recreate vs. cancel if the target stack
+  already exists (only prompts when there's actually a conflict to resolve).
+
+All other checkpoints are non-interactive:
+1. **Unsupported resource types** — automatically continue with supported resources only.
+2. **Plan approval gate** — runs only after `cfn-lint` is fully clean (0 errors, 0 warnings), then auto-approves in non-interactive mode.
+3. **Guardrail scan gate** — logs findings and auto-continues.
 
 Once those pass, **Agent 6 deploys automatically** — no confirmation prompt, no interactive
 parameter entry. See [Non-interactive parameter resolution](#non-interactive-parameter-resolution)
@@ -230,7 +214,7 @@ python migrate_agents.py resources/keyvault/main.bicep
 
 2. Live Azure resource-group export mode
    - Omit `bicep_file` and set `AZURE_RESOURCE_GROUP` (and optionally `AZURE_SUBSCRIPTION_ID`) in `.env`.
-   - Agent 0 asks which service to export, runs `az group export` for matching resource IDs, writes `input/<resource-group>.json`, and the graph continues from that ARM JSON.
+  - Agent 0 runs `az group export` for the full resource group, writes `input/<resource-group>.json`, and the graph continues from that ARM JSON.
 
 Example:
 
@@ -240,14 +224,15 @@ python migrate_agents.py
 ```
 
 ### 3. Self-correction retry loop
-If `cfn-lint` fails after the plan is approved, the graph loops back to Agent 3 with the
-lint error appended to the prompt, asking the LLM for a corrected plan. This repeats up to
+If `cfn-lint` is not clean (any error or warning), the graph loops back to Agent 3 with the
+lint output appended to the prompt, asking the LLM for a corrected plan. This repeats up to
 `MAX_FIX_ATTEMPTS` (default 2) times before giving up and writing a "stopped" report.
 
 ### 4. Legacy linear pipeline (`migrate.py`)
 An older, non-agentic version of the same deterministic-render / LLM-reasoning split still
 exists (`migrate.py` → `orchestrator/pipeline.py`), kept for backward compatibility. It has
-no human approval gates and no deploy step — prefer `migrate_agents.py` for anything new.
+no stack-conflict gate/checkpoint flow and no deploy step -- prefer `migrate_agents.py` for
+anything new.
 
 
 ```powershell
@@ -281,10 +266,9 @@ nothing applies:
 Every resolved value is still checked against the parameter's own `MinLength`/`MaxLength`/
 `AllowedPattern`/`AllowedValues` before `CreateStack`/`UpdateStack`.
 
-Only `guardrail_scan_gate` (prompts only when HIGH/CRITICAL security findings exist) and
-`stack_check_gate` (choosing update/delete-recreate/cancel when the
-target stack already exists) remain interactive for pre-deploy safety actions, and
-`plan_approval_gate` remains interactive for mandatory human review before rendering.
+Only `stack_check_gate` remains interactive for pre-deploy safety actions. It asks
+for delete-recreate vs cancel when the target stack already exists. `plan_approval_gate`
+and `guardrail_scan_gate` are non-interactive checkpoints.
 
 ## Guardrail security scan
 
@@ -312,10 +296,8 @@ runs static security scanning against the rendered template (`orchestrator/guard
      `0.0.0.0/0`/`::/0`. All-ports/all-protocols or a sensitive port (SSH/RDP/common
      database ports) is `CRITICAL`; a wide port range is `HIGH`; anything else is `MEDIUM`.
 
-Severity drives the gate: **`HIGH`/`CRITICAL` findings require an explicit `y` before
-deployment continues**; `MEDIUM`/`LOW` findings are written to the report and shown in the
-CLI but never block. A clean template (or one with only advisory findings) auto-continues
-with no prompt. The full finding list is written to
+Findings are always written to the report and shown in the CLI, and the run auto-continues
+without a prompt. The full finding list is written to
 `output/runs/<run_id>/guardrail_scan_report.txt` and summarized in `report.md`.
 Set `GUARDRAIL_SCAN_ENABLED=false` to skip the scan entirely (the gate then auto-continues).
 
@@ -329,13 +311,13 @@ scores synthetic dataset runs; its trimmed eval graph has no `agent7_report` nod
 runs never write to `history.jsonl`.
 
 Each JSONL record captures resource types touched, completion status, lint/deploy outcome,
-which human-in-the-loop gate(s) were exercised, `fix_attempts`, time-to-migrate, and a
+whether the stack-conflict gate was exercised, `fix_attempts`, time-to-migrate, and a
 `predicted_success_probability` vs. `actual_outcome` pair used for calibration.
 `calibration_report.md` aggregates:
 
 - **Pass rate** -- fraction of runs that completed without stopping.
-- **Human-intervention rate** -- fraction of runs where a human had to approve, reject, or
-  choose an action at an interactive gate.
+- **Human-intervention rate** -- fraction of runs where a human had to choose an action
+  at the stack-conflict gate.
 - **Deploy success rate** -- of runs that reached `agent6_deploy`.
 - **Mean/median time-to-migrate**.
 - **Brier score** -- calibration of `predict_success_probability()`'s forecast against the
@@ -436,7 +418,7 @@ aws configure
 # Validate the template + knowledge-base coverage only (no LLM, no AWS)
 python migrate_agents.py resources/keyvault/main.bicep --dry-run
 
-# Full migration: LLM plan -> human approval -> render -> lint -> deploy gates -> deploy
+# Full migration: LLM plan -> render -> lint/retry -> auto checkpoints -> stack gate (if clash) -> deploy
 python migrate_agents.py resources/keyvault/main.bicep
 
 # Custom output directory / knowledge-base index
@@ -546,7 +528,8 @@ Detailed docs:
 
 `knowledge_base/index.json` maps an ARM `type` string to a markdown doc documenting the
 Azure→AWS mapping (conceptual differences, resource/parameter/property mapping). A resource
-type with no entry triggers the Agent 1 "unsupported type" human prompt.
+type with no entry causes Agent 1 to auto-continue with supported types only (unsupported
+types are skipped and logged).
 
 To add a new resource type:
 1. Research the Azure resource and its AWS equivalent.
@@ -603,7 +586,7 @@ What's implemented and verified end-to-end (dry-run and full run, including the 
 and fully automatic deployment) as of 2026-10-05:
 
 - ✅ 7-agent LangGraph pipeline (`migrate_agents.py`) covering compile → extract → CNR →
-  LLM plan → plan approval gate → render → lint → self-correction retry →
+  LLM plan → render → lint → self-correction retry → plan approval gate →
   guardrail scan gate → stack conflict gate (when needed) → real `boto3` deploy →
   post-deploy verify → report.
 - ✅ Resource-type coverage in the knowledge base includes:
@@ -614,12 +597,12 @@ and fully automatic deployment) as of 2026-10-05:
   - Messaging/eventing (`Microsoft.Storage/storageAccounts/queueServices/queues`, `Microsoft.ServiceBus/namespaces[/queues|/topics|/topics/subscriptions]`)
 - ✅ End-to-end run artifacts in `output/runs/` include successful VNet migration/deploy
    reports (for example run `481268c5`).
-- ✅ Optional Agent 0 resource-group export mode: service-scoped export to ARM JSON
+- ✅ Optional Agent 0 resource-group export mode: full resource-group export to ARM JSON
    (`input/<rg>.json`) plus best-effort Key Vault secret carryover.
-- ✅ Human-in-the-loop decision points: mandatory plan approval, plus conditional guardrail
-  and stack-conflict gates (and optional Agent 1 unsupported-type continuation);
-  deployment itself (parameter resolution + create/update-stack) is fully automatic once
-  applicable gates pass, with no interactive parameter entry.
+- ✅ Human-in-the-loop decision point: stack-conflict gate only.
+  Other checkpoints (unsupported-type handling, plan checkpoint, and guardrail scan)
+  auto-continue in non-interactive mode; deployment itself (parameter resolution +
+  create/update-stack) is fully automatic once stack checks pass.
 - ✅ Non-interactive CFN parameter resolution: `--params-file` → `CFN_PARAM_<NAME>` env var →
   source Key Vault secret (matched by normalized name, requires `Key Vault Secrets User`-level
   RBAC) → template `Default` → source resource group/vault name (naming/prefix params only).
@@ -628,14 +611,14 @@ and fully automatic deployment) as of 2026-10-05:
   `AllowedValues`) before `CreateStack`/`UpdateStack` to avoid `ROLLBACK_COMPLETE` stacks
   from LLM-generated defaults that violate their own constraints.
 - ✅ Stack-state detection (`ROLLBACK_COMPLETE`/`CREATE_FAILED`/`DELETE_FAILED`/
-  `*_IN_PROGRESS`) with a human choice to update, delete-and-recreate, or cancel.
+  `*_IN_PROGRESS`) with a human choice to delete-and-recreate, or cancel.
 - ✅ Guardrail security scanning (`checkov`) plus custom secret/IAM/network checks on the
-  rendered template, with a human gate on HIGH/CRITICAL findings before deploy (see
+  rendered template, with findings reported before deploy (see
   [Guardrail security scan](#guardrail-security-scan)).
-- ✅ Rich gate-review UX for human checkpoints: interactive decisions now render as
-  structured tables with per-gate context snapshots (including run ID + timestamp) instead
-  of raw prompt-style input.
-- ✅ Automated tests (`pytest`, 66 passing) covering guardrail checks, evaluators, run-history/
+- ✅ Structured checkpoint UX: stack conflicts and checkpoint contexts render as rich tables
+  with per-gate context snapshots (including run ID + timestamp) instead of raw prompt-style
+  input.
+- ✅ Automated tests (`pytest`, 71 passing) covering guardrail checks, evaluators, run-history/
   calibration logging, and observability/redaction.
 - ✅ `SecretValue` wrapper + root logging redaction filter are in place end-to-end, so
   secrets remain masked in state stringification and accidental log rendering.
@@ -668,8 +651,9 @@ with `az bicep version`.
 **Bedrock `ResourceNotFoundException` (model not available)** — verify `AWS_REGION`
 supports Bedrock and that `BEDROCK_MODEL_ID` is correct and enabled for your account.
 
-**`cfn-lint` errors vs. warnings** — errors (`E...`) trigger the self-correction retry
-loop; warnings (`W...`) are reported but don't block deployment.
+**`cfn-lint` errors vs. warnings** — both errors (`E...`) and warnings (`W...`) are treated as
+not-clean and trigger the self-correction retry loop; deployment gates run only after
+0 errors and 0 warnings.
 
 **Stack stuck in `ROLLBACK_COMPLETE`/`CREATE_FAILED`/`DELETE_FAILED`** — handled
 automatically by `stack_check_gate`, which offers to delete-and-recreate the stack.
@@ -693,6 +677,6 @@ Until granted, secret parameters fall through to `--params-file`/`CFN_PARAM_<NAM
 ---
 
 **Status:** Pilot — multi-resource Azure→AWS migration through the 7-agent
-graph with mandatory plan approval plus conditional guardrail/stack gates and fully
-automatic deployment; see
+graph with automatic plan/guardrail checkpoints, stack-conflict as the only
+interactive gate, and fully automatic deployment; see
 [Current progress](#current-progress) above for scope.

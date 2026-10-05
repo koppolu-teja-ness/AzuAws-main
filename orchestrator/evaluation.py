@@ -266,6 +266,10 @@ def parameter_hygiene(outputs: dict, reference_outputs: dict) -> dict:
 def forbidden_patterns_absent(outputs: dict, reference_outputs: dict) -> dict:
     patterns = (reference_outputs or {}).get("forbidden_patterns") or []
     haystack = json.dumps(outputs, default=str)
+    # source_azure_type is a required traceability field in the plan schema (every
+    # resource legitimately echoes its source Azure type, e.g. "Microsoft.KeyVault/...")
+    # -- strip it before scanning so it can't be mistaken for a leaked Azure-ism.
+    haystack = re.sub(r'"source_azure_type"\s*:\s*"[^"]*"', '"source_azure_type": ""', haystack)
     hits = [p for p in patterns if re.search(p, haystack)]
     return {
         "key": "forbidden_patterns_absent", "score": 0.0 if hits else 1.0,

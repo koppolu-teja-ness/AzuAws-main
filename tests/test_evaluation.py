@@ -124,6 +124,14 @@ def test_forbidden_patterns_absent_catches_leaked_secret():
     assert forbidden_patterns_absent({"migration_plan": ADVERSARIAL_PLAN}, reference)["score"] == 0.0
 
 
+def test_forbidden_patterns_absent_ignores_required_source_azure_type_field():
+    # GOOD_PLAN's resources legitimately carry source_azure_type="Microsoft.KeyVault/..."
+    # (a required traceability field) -- that must not trip a forbidden pattern targeting
+    # the same Azure namespace prefix.
+    reference = {"forbidden_patterns": ["Microsoft.KeyVault"]}
+    assert forbidden_patterns_absent({"migration_plan": GOOD_PLAN}, reference)["score"] == 1.0
+
+
 def test_cfn_lint_clean_and_lint_attempts():
     assert cfn_lint_clean({"foo": "bar"})["score"] is None  # not applicable (agent3-only outputs)
     assert cfn_lint_clean({"lint_passed": True})["score"] == 1.0

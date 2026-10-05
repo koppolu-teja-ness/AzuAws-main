@@ -196,6 +196,8 @@
   .pnode.llm .n { color: #d2691e; }
   .pnode.gate { background: #fff8e1; border-color: var(--warn); }
   .pnode.gate .n { color: var(--warn); }
+  .pnode.auto { background: #f3f0ff; border-color: var(--accent); }
+  .pnode.auto .n { color: var(--accent); }
   .pnode.end { background: #e7f6ea; border-color: var(--good); }
   .pnode.end .n { color: var(--good); }
   .pnode.note { background: #fff8e1; border-color: var(--warn); border-style: dashed; }
@@ -313,7 +315,7 @@
       <div class="card">
         <span class="tag">SAFE</span>
         <h3>Humans stay in control</h3>
-        <p>Mandatory plan approval plus conditional security and stack-conflict gates before anything touches AWS.</p>
+        <p>Plan review and guardrail scanning are automatic checkpoints; only a real stack conflict ever pauses the run for a human decision.</p>
       </div>
       <div class="card">
         <span class="tag">RELIABLE</span>
@@ -394,7 +396,7 @@
       <div class="chev-desc">Azure Bicep / live resource group</div>
       <div class="chev-desc">Compile to ARM, build neutral model</div>
       <div class="chev-desc">LLM plan grounded by the RAG KB</div>
-      <div class="chev-desc">Human gates + security guardrails</div>
+      <div class="chev-desc">Automatic checkpoints + stack-conflict gate</div>
       <div class="chev-desc">Render, deploy and verify</div>
       <div class="chev-desc">AWS CloudFormation stack</div>
     </div>
@@ -425,28 +427,30 @@
       </div>
       <div class="vconn right"><span>↓</span></div>
       <div class="pipe-row reverse">
-        <div class="pnode gate"><span class="n">PLAN GATE</span><span class="d">Human approval (mandatory)</span></div>
+        <div class="pnode auto"><span class="n">PLAN CHECK</span><span class="d">Auto-approved once cfn-lint is clean</span></div>
         <div class="harrow">‹</div>
         <div class="pnode"><span class="n">AGENT 4</span><span class="d">Render CloudFormation</span></div>
         <div class="harrow">‹</div>
         <div class="pnode"><span class="n">AGENT 5</span><span class="d">Validate with cfn-lint</span></div>
         <div class="harrow">‹</div>
-        <div class="pnode gate"><span class="n">GATES</span><span class="d">Guardrail + stack conflict</span></div>
+        <div class="pnode auto"><span class="n">GUARDRAIL SCAN</span><span class="d">Auto security scan, logs findings</span></div>
       </div>
       <div class="vconn left"><span>↓</span></div>
       <div class="pipe-row">
+        <div class="pnode gate"><span class="n">STACK GATE</span><span class="d">Human: delete &amp; recreate, or cancel</span></div>
+        <div class="harrow">›</div>
         <div class="pnode"><span class="n">AGENT 6</span><span class="d">Deploy via boto3</span></div>
         <div class="harrow">›</div>
         <div class="pnode"><span class="n">AGENT 6b</span><span class="d">Post-deploy verify</span></div>
         <div class="harrow">›</div>
         <div class="pnode end"><span class="n">AGENT 7</span><span class="d">Report + history + calibration</span></div>
-        <div class="harrow"></div>
-        <div class="pnode note"><span class="n">↺ SELF-CORRECTION</span><span class="d">cfn-lint fail loops Agent 5 → Agent 3 (retry limit)</span></div>
       </div>
     </div>
-    <div class="legend" style="margin-top:20px;">
+    <p style="margin-top:14px; font-size:13.5px; color:var(--warn);">↺ <b>Self-correction:</b> a non-clean cfn-lint result loops back from Agent 5 to Agent 3, up to the retry limit.</p>
+    <div class="legend" style="margin-top:10px;">
       <span><span class="dot" style="background:var(--soft);border:1px solid var(--line);"></span>Deterministic code</span>
       <span><span class="dot" style="background:#ffd9a8;"></span>LLM reasoning</span>
+      <span><span class="dot" style="background:#e4defa;border:1px solid var(--accent);"></span>Auto checkpoint</span>
       <span><span class="dot" style="background:#ffe9a8;"></span>Human gate</span>
       <span><span class="dot" style="background:#bfe6c6;"></span>Report / end</span>
     </div>
@@ -456,27 +460,27 @@
   <!-- Slide 6: Human-in-the-loop -->
   <section class="slide">
     <div class="eyebrow">Safety</div>
-    <h2>Three human-in-the-loop gates</h2>
-    <p class="lead" style="margin-bottom:22px;">Humans approve the decisions that matter. One gate is
-    always required; two are conditional — they only prompt when there is a real risk to resolve.</p>
+    <h2>One human gate, two automatic checkpoints</h2>
+    <p class="lead" style="margin-bottom:22px;">Every migration plan is reviewed and every template is
+    security-scanned before deploy — but only a real stack conflict ever stops the run for a human decision.</p>
     <div class="grid3">
-      <div class="card" style="background:#fff8e1; border-color:var(--warn);">
-        <span class="tag" style="color:var(--warn);">MANDATORY</span>
-        <h3 style="color:var(--warn);">Plan approval</h3>
-        <p>Review the LLM's resource mapping table before any CloudFormation is generated. Explicit "yes" required.</p>
+      <div class="card" style="background:#f3f0ff; border-color:var(--accent);">
+        <span class="tag">AUTOMATIC</span>
+        <h3 style="color:var(--accent);">Plan approval</h3>
+        <p>The migration plan and resource mapping table are logged for review once cfn-lint is fully clean; approval is automatic.</p>
+      </div>
+      <div class="card" style="background:#f3f0ff; border-color:var(--accent);">
+        <span class="tag">AUTOMATIC</span>
+        <h3 style="color:var(--accent);">Guardrail scan</h3>
+        <p>checkov plus custom checks run next. Every finding is logged regardless of severity, and the run always continues.</p>
       </div>
       <div class="card" style="background:#fff8e1; border-color:var(--warn);">
-        <span class="tag" style="color:var(--warn);">CONDITIONAL</span>
-        <h3 style="color:var(--warn);">Guardrail scan</h3>
-        <p>Only prompts when HIGH/CRITICAL security findings exist in the rendered template.</p>
-      </div>
-      <div class="card" style="background:#fff8e1; border-color:var(--warn);">
-        <span class="tag" style="color:var(--warn);">CONDITIONAL</span>
+        <span class="tag" style="color:var(--warn);">HUMAN DECISION</span>
         <h3 style="color:var(--warn);">Stack conflict</h3>
-        <p>Only prompts when the target stack already exists — choose update, delete-recreate, or cancel.</p>
+        <p>The only interactive prompt — fires only when the target stack already exists. Choose delete-and-recreate or cancel.</p>
       </div>
     </div>
-    <p style="margin-top:22px; font-size:17px;"><b>Once gates pass, deployment is fully automatic</b> — no
+    <p style="margin-top:22px; font-size:17px;"><b>Once the stack gate clears, deployment is fully automatic</b> — no
     confirmation prompt and no manual parameter entry. Parameter values resolve from files, environment
     variables, or the source Key Vault in a clear priority order.</p>
     <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 9 · Human Gates</span></div>
@@ -506,8 +510,8 @@
         </ul>
       </div>
     </div>
-    <p style="margin-top:18px; font-size:16px;"><b>Severity drives behavior:</b> HIGH/CRITICAL findings block
-    and require approval; MEDIUM/LOW are advisory and logged to the run report.</p>
+    <p style="margin-top:18px; font-size:16px;"><b>Severity drives visibility, not blocking:</b> every finding is
+    logged to the run report and CLI, HIGH/CRITICAL ones are called out, and the run always auto-continues.</p>
     <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 10 · Security</span></div>
   </section>
 
@@ -529,11 +533,11 @@
       </div>
       <div class="card">
         <h3>Seed-and-grow</h3>
-        <p>Unknown resource types trigger a human prompt. The KB expands with new families over time.</p>
+        <p>An unmapped resource type is logged and skipped automatically; the pipeline still migrates every resource it does understand.</p>
       </div>
     </div>
-    <p style="margin-top:22px; font-size:17px;">An unmapped resource type is caught early — the pipeline asks
-    before migrating anything it does not understand, rather than failing silently.</p>
+    <p style="margin-top:22px; font-size:17px;">Coverage grows by authoring a new mapping doc — no silent
+    guessing, and no resource is ever migrated without a trusted, human-reviewed mapping behind it.</p>
     <div class="footer"><span>Azure → AWS IaC Migration</span><span>Slide 11 · Knowledge Base</span></div>
   </section>
 
@@ -620,13 +624,13 @@
         <div class="kpi-label">LLM reasoning step — everything else deterministic</div>
       </div>
       <div class="card" style="text-align:center;">
-        <div class="kpi">3</div>
-        <div class="kpi-label">human gates before AWS is touched</div>
+        <div class="kpi">1</div>
+        <div class="kpi-label">human decision point before AWS is touched</div>
       </div>
     </div>
     <ul>
       <li><b>Auditable:</b> structured plans and per-run artifacts make every decision reviewable.</li>
-      <li><b>Safe:</b> human gates, guardrail scanning, and secret protection guard every deploy.</li>
+      <li><b>Safe:</b> automatic plan review and guardrail scanning, a stack-conflict gate, and secret protection guard every deploy.</li>
       <li><b>Reliable:</b> self-correction plus calibration metrics keep quality measurable over time.</li>
       <li><b>Extensible:</b> a seed-and-grow knowledge base adds new resource families incrementally.</li>
     </ul>

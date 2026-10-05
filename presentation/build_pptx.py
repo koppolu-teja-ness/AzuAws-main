@@ -31,6 +31,7 @@ LLM_BG = RGBColor(0xFF, 0xF3, 0xE6)
 LLM_FG = RGBColor(0xD2, 0x69, 0x1E)
 GATE_BG = RGBColor(0xFF, 0xF8, 0xE1)
 END_BG = RGBColor(0xE7, 0xF6, 0xEA)
+AUTO_BG = RGBColor(0xEF, 0xEC, 0xFB)
 
 prs = Presentation()
 prs.slide_width = SW
@@ -142,9 +143,9 @@ def card(s, x, y, w, h, title_txt, body, tcolor=AZURE, fill=SOFT, line=LINE, tag
 
 def flownode(s, x, y, w, h, label, body, kind="det"):
     fills = {"det": SOFT, "llm": LLM_BG, "gate": GATE_BG, "end": END_BG,
-             "src": RGBColor(0xEA, 0xF3, 0xFB)}
-    lines = {"det": LINE, "llm": AWS, "gate": WARN, "end": GOOD, "src": AZURE}
-    labelc = {"det": AZURE, "llm": LLM_FG, "gate": WARN, "end": GOOD, "src": AZURE}
+             "src": RGBColor(0xEA, 0xF3, 0xFB), "auto": AUTO_BG}
+    lines = {"det": LINE, "llm": AWS, "gate": WARN, "end": GOOD, "src": AZURE, "auto": ACCENT}
+    labelc = {"det": AZURE, "llm": LLM_FG, "gate": WARN, "end": GOOD, "src": AZURE, "auto": ACCENT}
     box(s, x, y, w, h, fill=fills[kind], line=lines[kind], line_w=1.25)
     text(s, x + 0.08, y + 0.12, w - 0.16, 0.3,
          [[R(label, 11, labelc[kind], True, False)]], align=PP_ALIGN.CENTER)
@@ -280,8 +281,8 @@ card(s, 0.7, cy, cw, 2.9, "Structured, not freeform",
      "The LLM emits a structured JSON migration plan \u2014 never raw template text \u2014 so every "
      "decision is reviewable and replayable.", tag="Auditable")
 card(s, 0.7 + cw + 0.28, cy, cw, 2.9, "Humans stay in control",
-     "Mandatory plan approval plus conditional security and stack-conflict gates before anything "
-     "touches AWS.", tag="Safe")
+     "Plan review and guardrail scanning are automatic checkpoints; only a real stack conflict "
+     "ever pauses the run for a human decision.", tag="Safe")
 card(s, 0.7 + 2 * (cw + 0.28), cy, cw, 2.9, "Self-correcting",
      "Validation failures loop back to the reasoning step with feedback, so the pipeline fixes "
      "its own mistakes.", tag="Reliable")
@@ -374,7 +375,7 @@ stages = [
     ("Source", RGBColor(0x00, 0x78, 0xD4), "Azure Bicep / live resource group"),
     ("Ingest & Normalize", RGBColor(0x2B, 0x7F, 0xC4), "Compile to ARM, build neutral model"),
     ("Reason", RGBColor(0xD2, 0x69, 0x1E), "LLM plan grounded by the RAG KB"),
-    ("Govern", RGBColor(0xB8, 0x86, 0x0B), "Human gates + security guardrails"),
+    ("Govern", RGBColor(0xB8, 0x86, 0x0B), "Automatic checkpoints + stack-conflict gate"),
     ("Execute", RGBColor(0x3E, 0x7C, 0xB1), "Render, deploy and verify"),
     ("Target", RGBColor(0x2E, 0x7D, 0x32), "AWS CloudFormation stack"),
 ]
@@ -424,14 +425,14 @@ for i, (lbl, body, kind) in enumerate(row1):
     if i < 3:
         garrow(s, MSO_SHAPE.RIGHT_ARROW, X[i] + nw + 0.065, r1y + nh / 2 - 0.14, 0.5, 0.28)
 
-# down connector: Agent 3 -> plan gate (right side)
+# down connector: Agent 3 -> plan check (right side)
 garrow(s, MSO_SHAPE.DOWN_ARROW, X[3] + nw / 2 - 0.15, r1y + nh + 0.06, 0.3, 0.38)
 
-# Row 2 (right -> left): plan gate, Agent 4, Agent 5, guardrail/stack gates
-row2 = [("Plan gate", "Human approval\n(mandatory)", "gate"),
+# Row 2 (right -> left): plan check (auto), Agent 4, Agent 5, guardrail scan (auto)
+row2 = [("Plan check", "Auto-approved once\ncfn-lint is clean", "auto"),
         ("Agent 4", "Render\nCloudFormation", "det"),
         ("Agent 5", "Validate with\ncfn-lint", "det"),
-        ("Gates", "Guardrail +\nstack conflict", "gate")]
+        ("Guardrail scan", "Auto security scan\n(logs findings)", "auto")]
 r2X = [X[3], X[2], X[1], X[0]]
 for i, (lbl, body, kind) in enumerate(row2):
     flownode(s, r2X[i], r2y, nw, nh, lbl, body, kind)
@@ -439,33 +440,34 @@ for i, (lbl, body, kind) in enumerate(row2):
         gap_center = (r2X[i] + (r2X[i + 1] + nw)) / 2
         garrow(s, MSO_SHAPE.LEFT_ARROW, gap_center - 0.25, r2y + nh / 2 - 0.14, 0.5, 0.28)
 
-# down connector: gates -> Agent 6 (left side)
+# down connector: guardrail scan -> stack gate (left side)
 garrow(s, MSO_SHAPE.DOWN_ARROW, X[0] + nw / 2 - 0.15, r2y + nh + 0.06, 0.3, 0.38)
 
-# Row 3 (left -> right)
-row3 = [("Agent 6", "Deploy via\nboto3", "det"),
+# Row 3 (left -> right): the one human gate, then deploy / verify / report
+row3 = [("Stack gate", "Human: delete and\nrecreate, or cancel", "gate"),
+        ("Agent 6", "Deploy via\nboto3", "det"),
         ("Agent 6b", "Post-deploy\nverify", "det"),
         ("Agent 7", "Report + history\n+ calibration", "end")]
 for i, (lbl, body, kind) in enumerate(row3):
     flownode(s, X[i], r3y, nw, nh, lbl, body, kind)
-    if i < 2:
+    if i < 3:
         garrow(s, MSO_SHAPE.RIGHT_ARROW, X[i] + nw + 0.065, r3y + nh / 2 - 0.14, 0.5, 0.28)
 
-# self-correction callout (fills the empty right slot of row 3)
-box(s, 9.7, r3y - 0.02, 2.9, nh + 0.04, fill=GATE_BG, line=WARN, line_w=1.25)
-text(s, 9.9, r3y + 0.12, 2.55, 0.35, [[R("\u21BA  Self-correction", 13, WARN, True, False)]])
-text(s, 9.9, r3y + 0.48, 2.55, 0.5,
-     [[R("cfn-lint fail loops Agent 5 \u2192 Agent 3, up to the retry limit.", 11, INK, False, False)]],
-     line_spacing=1.0)
+# self-correction note
+text(s, 0.7, r3y + nh + 0.08, 11.9, 0.26,
+     [[R("\u21BA Self-correction: ", 11.5, WARN, True, False),
+       R("a non-clean cfn-lint result loops back from Agent 5 to Agent 3, up to the retry limit.",
+         11.5, MUTED, False, False)]])
 
 # legend
 leg = [("Deterministic code", SOFT, LINE), ("LLM reasoning", LLM_BG, AWS),
+       ("Auto checkpoint", AUTO_BG, ACCENT),
        ("Human gate", GATE_BG, WARN), ("Report / end", END_BG, GOOD)]
 lx = 0.7
 for t, f, ln in leg:
     box(s, lx, 6.12, 0.24, 0.24, fill=f, line=ln)
-    text(s, lx + 0.32, 6.08, 2.55, 0.3, [[R(t, 12, MUTED, False, False)]])
-    lx += 2.95
+    text(s, lx + 0.32, 6.08, 2.1, 0.3, [[R(t, 11.5, MUTED, False, False)]])
+    lx += 2.42
 footer(s, 8, "Pipeline")
 
 # ----------------------------------------------------------------------------
@@ -473,24 +475,25 @@ footer(s, 8, "Pipeline")
 # ----------------------------------------------------------------------------
 s = add_slide()
 eyebrow(s, "Safety")
-title(s, "Three human-in-the-loop gates")
+title(s, "One human gate, two automatic checkpoints")
 text(s, 0.7, 1.75, 11.9, 0.8,
-     [[R("Humans approve the decisions that matter. One gate is always required; two are "
-         "conditional \u2014 they only prompt when there is a real risk to resolve.", 16, MUTED, False, False)]],
+     [[R("Every migration plan is reviewed and every template is security-scanned before deploy "
+         "\u2014 but only a real stack conflict ever stops the run for a human decision.", 16, MUTED, False, False)]],
      line_spacing=1.15)
 gcw = 3.78
 gy = 2.85
 card(s, 0.7, gy, gcw, 2.5, "Plan approval",
-     "Review the LLM's resource mapping table before any CloudFormation is generated. "
-     "Explicit \u201cyes\u201d required.", tcolor=WARN, fill=GATE_BG, line=WARN, tag="Mandatory")
+     "The migration plan and resource mapping table are logged for review once cfn-lint is fully "
+     "clean; approval is automatic.", tcolor=ACCENT, fill=AUTO_BG, line=ACCENT, tag="Automatic")
 card(s, 0.7 + gcw + 0.28, gy, gcw, 2.5, "Guardrail scan",
-     "Only prompts when HIGH / CRITICAL security findings exist in the rendered template.",
-     tcolor=WARN, fill=GATE_BG, line=WARN, tag="Conditional")
+     "checkov plus custom checks run next. Every finding is logged to the report regardless of "
+     "severity, and the run always continues.", tcolor=ACCENT, fill=AUTO_BG, line=ACCENT, tag="Automatic")
 card(s, 0.7 + 2 * (gcw + 0.28), gy, gcw, 2.5, "Stack conflict",
-     "Only prompts when the target stack already exists \u2014 choose update, delete-recreate, or cancel.",
-     tcolor=WARN, fill=GATE_BG, line=WARN, tag="Conditional")
+     "The only interactive prompt \u2014 fires only when the target stack already exists. Choose "
+     "delete-and-recreate or cancel.",
+     tcolor=WARN, fill=GATE_BG, line=WARN, tag="Human decision")
 text(s, 0.7, 5.7, 11.9, 0.9,
-     [[R("Once gates pass, deployment is fully automatic", 15, INK, True, False),
+     [[R("Once the stack gate clears, deployment is fully automatic", 15, INK, True, False),
        R(" \u2014 no confirmation prompt and no manual parameter entry. Parameter values resolve from "
          "files, environment variables, or the source Key Vault in a clear priority order.", 15, MUTED, False, False)]],
      line_spacing=1.1)
@@ -518,9 +521,9 @@ bullets(s, 6.85, 2.3, 5.75, 3.0, [
 ], size=14, gap=8)
 box(s, 0.7, 5.5, 11.92, 1.0, fill=SOFT, line=LINE)
 text(s, 0.95, 5.72, 11.4, 0.7,
-     [[R("Severity drives behavior: ", 14.5, INK, True, False),
-       R("HIGH / CRITICAL findings block and require approval; MEDIUM / LOW are advisory and "
-         "logged to the run report.", 14.5, MUTED, False, False)]], line_spacing=1.1)
+     [[R("Severity drives visibility, not blocking: ", 14.5, INK, True, False),
+       R("every finding is logged to the run report and CLI, HIGH / CRITICAL ones are called out, "
+         "and the run always auto-continues.", 14.5, MUTED, False, False)]], line_spacing=1.1)
 footer(s, 10, "Security")
 
 # ----------------------------------------------------------------------------
@@ -540,10 +543,11 @@ card(s, 0.7, cy, cw, 2.5, "Mapping docs",
 card(s, 0.7 + cw + 0.28, cy, cw, 2.5, "Hybrid retrieval",
      "Vector search (Chroma) fused with BM25 keyword scoring via reciprocal rank fusion for better recall.")
 card(s, 0.7 + 2 * (cw + 0.28), cy, cw, 2.5, "Seed-and-grow",
-     "Unknown resource types trigger a human prompt. The knowledge base expands with new families over time.")
+     "An unmapped resource type is logged and skipped automatically; the pipeline still migrates "
+     "every resource it does understand.")
 text(s, 0.7, 6.15, 11.9, 0.6,
-     [[R("An unmapped resource type is caught early \u2014 the pipeline asks before migrating anything "
-         "it does not understand, rather than failing silently.", 15, MUTED, False, False)]], line_spacing=1.1)
+     [[R("Coverage grows by authoring a new mapping doc \u2014 no silent guessing, and no resource is "
+         "ever migrated without a trusted, human-reviewed mapping behind it.", 15, MUTED, False, False)]], line_spacing=1.1)
 footer(s, 11, "Knowledge Base")
 
 # ----------------------------------------------------------------------------
@@ -644,7 +648,7 @@ eyebrow(s, "Summary")
 title(s, "Why this approach works")
 stats = [("7", "agents in one LangGraph pipeline", AZURE),
          ("1", "LLM reasoning step \u2014 everything else deterministic", AWS),
-         ("3", "human gates before AWS is touched", AZURE)]
+         ("1", "human decision point before AWS is touched", AZURE)]
 sx = 0.7
 sw = 3.78
 for big, lbl, col in stats:
@@ -655,7 +659,7 @@ for big, lbl, col in stats:
     sx += sw + 0.28
 bullets(s, 0.7, 3.7, 11.9, 2.3, [
     [R("Auditable: ", 15.5, INK, True, False), R("structured plans and per-run artifacts make every decision reviewable.", 15.5, INK, False, False)],
-    [R("Safe: ", 15.5, INK, True, False), R("human gates, guardrail scanning, and secret protection guard every deploy.", 15.5, INK, False, False)],
+    [R("Safe: ", 15.5, INK, True, False), R("automatic plan review and guardrail scanning, a stack-conflict gate, and secret protection guard every deploy.", 15.5, INK, False, False)],
     [R("Reliable: ", 15.5, INK, True, False), R("self-correction plus calibration metrics keep quality measurable over time.", 15.5, INK, False, False)],
     [R("Extensible: ", 15.5, INK, True, False), R("a seed-and-grow knowledge base adds new resource families incrementally.", 15.5, INK, False, False)],
 ], size=15.5, gap=10)
@@ -710,28 +714,28 @@ NOTES = [
     "evaluation and calibration.",
     # 8 Pipeline
     "Here's the detailed pipeline. Agents 0 to 2 export and normalize the source. Agent 3 is the "
-    "single Bedrock LLM call that produces the migration plan. The plan approval gate is "
-    "mandatory. Agents 4 and 5 render and lint the template; if linting fails, we loop back to "
-    "Agent 3 with the error for self-correction. Then the guardrail and stack gates, and finally "
-    "Agents 6 and 7 deploy, verify, and report.",
+    "single Bedrock LLM call that produces the migration plan. Agents 4 and 5 render and lint the "
+    "template; if linting fails, we loop back to Agent 3 with the error for self-correction. Once "
+    "lint is clean, the plan check and guardrail scan run automatically with no prompt, then the "
+    "one human gate checks for a stack conflict before Agents 6 and 7 deploy, verify, and report.",
     # 9 Human Gates
-    "There are three human gates. Plan approval is always required before any CloudFormation is "
-    "generated. The guardrail and stack-conflict gates are conditional \u2014 they only prompt when "
-    "there's a real risk: high or critical security findings, or an existing stack. Once the gates "
-    "pass, deployment is fully automatic, with parameter values resolved non-interactively from "
-    "files, environment variables, or the source Key Vault.",
+    "There's exactly one interactive gate. The plan review and guardrail scan both run "
+    "automatically once lint is clean \u2014 they log everything but never block. The stack-conflict "
+    "gate is the only prompt, and only fires when the target stack already exists: delete and "
+    "recreate, or cancel. Once it clears, deployment is fully automatic, with parameter values "
+    "resolved non-interactively from files, environment variables, or the source Key Vault.",
     # 10 Security
     "Security has two layers. The guardrail scan runs checkov plus custom checks for hardcoded "
     "secrets, over-permissive IAM, and open network ingress. Secrets handling wraps values so "
     "they print as asterisks, redacts them from logs, never writes plaintext to disk, and only "
-    "reveals them at the AWS API boundary. Severity drives behavior \u2014 high and critical findings "
-    "block and require approval.",
+    "reveals them at the AWS API boundary. Severity drives visibility, not blocking \u2014 every "
+    "finding is logged, and the run always continues automatically.",
     # 11 Knowledge Base
     "Mappings are grounded, not guessed. Each Azure resource type maps to a human-reviewed "
     "markdown document describing its AWS equivalent. Before reasoning, the LLM retrieves the "
     "relevant docs using hybrid vector plus keyword search. The knowledge base follows a "
-    "seed-and-grow model: unknown resource types trigger a human prompt rather than failing "
-    "silently, and coverage expands over time.",
+    "seed-and-grow model: an unmapped resource type is logged and skipped automatically rather "
+    "than guessed at, and coverage expands over time as new mapping docs are added.",
     # 12 Coverage
     "Today the agent migrates Key Vault to Secrets Manager, Virtual Networks to VPCs, Azure "
     "Functions to Lambda with IAM and S3, Blob containers to S3 buckets, and Storage Queue and "
@@ -750,11 +754,12 @@ NOTES = [
     "testable deterministic nodes. Persistence is simple flat files \u2014 no database needed at this "
     "scale.",
     # 15 Summary
-    "To summarize: seven agents, one LLM reasoning step, and three human gates. The result is "
-    "auditable through structured plans and per-run artifacts, safe through gates and guardrails, "
-    "reliable through self-correction and calibration, and extensible through a seed-and-grow "
-    "knowledge base. In short, a practical and trustworthy path from Azure Bicep to AWS "
-    "CloudFormation. Thank you \u2014 happy to take questions.",
+    "To summarize: seven agents, one LLM reasoning step, and a single human decision point. The "
+    "result is auditable through structured plans and per-run artifacts, safe through automatic "
+    "checkpoints, guardrails, and the stack-conflict gate, reliable through self-correction and "
+    "calibration, and extensible through a seed-and-grow knowledge base. In short, a practical and "
+    "trustworthy path from Azure Bicep to AWS CloudFormation. Thank you \u2014 happy to take "
+    "questions.",
 ]
 
 for _slide, _note in zip(prs.slides, NOTES):
